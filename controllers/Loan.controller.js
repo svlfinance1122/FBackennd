@@ -364,9 +364,15 @@ const downloadReport = async (req, res, next) => {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    const headerText = `Report: ${dataType} | Section: ${section || "All"
-      } | Area: ${areas?.join(", ") || "All"} | Day: ${day || "All"
-      } | From: ${fromDate} | To: ${toDate} `;
+    const dateRange = {
+      [Op.between]: [
+        new Date(`${fromDate} 00:00:00`),
+        new Date(`${toDate} 23:59:59`)
+      ]
+    };
+
+    const headerText = `Report: ${dataType} | Section: ${section || "All"} | Area: ${areas?.join(", ") || "All"
+      } | Day: ${day || "All"} | From: ${fromDate} | To: ${toDate}`;
 
     /* ======================================================
        1️⃣ CUSTOMER DATA → EXCEL
@@ -377,10 +383,10 @@ const downloadReport = async (req, res, next) => {
 
       const columns = [
         { header: "S.No", key: "sno", width: 8 },
-        { header: "Loan ID", key: "loanId", width: 30 },
+        { header: "Loan ID", key: "loanId", width: 25 },
         { header: "Section", key: "section", width: 12 },
         { header: "Area", key: "area", width: 12 },
-        { header: "Day", key: "day", width: 15 },
+        { header: "Day", key: "day", width: 12 },
         { header: "Name", key: "name", width: 20 },
         { header: "Address", key: "address", width: 25 },
         { header: "Phone", key: "phoneNumber", width: 15 },
@@ -397,81 +403,60 @@ const downloadReport = async (req, res, next) => {
         { header: "Additional Info", key: "additionalInfo", width: 25 },
       ];
 
-      /* ================= TITLE ================= */
-      sheet.addRow([headerText]);
+      sheet.columns = columns;
+
       sheet.mergeCells(1, 1, 1, columns.length);
+      sheet.getCell("A1").value = headerText;
       sheet.getRow(1).font = { bold: true };
       sheet.getRow(1).alignment = { horizontal: "center" };
 
       sheet.addRow([]);
       sheet.addRow([]);
+      sheet.addRow(columns.map(c => c.header)).font = { bold: true };
 
-      /* ================= COLUMN HEADERS ================= */
-      const headerRow = sheet.addRow(columns.map(c => c.header));
-      headerRow.font = { bold: true };
+      const where = {
+        ...(section && { section }),
+        ...(areas?.length && { area: { [Op.in]: areas } }),
+        ...(section === "Weekly" && day && { day }),
+        givenDate: dateRange
+      };
 
-      /* ================= SET COLUMN WIDTHS & KEYS ================= */
-      sheet.columns = columns.map(c => ({
-        key: c.key,
-        width: c.width
-      }));
+      const users = await LoanUser.findAll({ where, order: [["sno", "ASC"]] });
 
-      /* ================= FILTER ================= */
-      const where = {};
-      if (section) where.section = section;
-      if (areas?.length) where.area = { [Op.in]: areas };
-      if (section === "Weekly" && day) where.day = day;
+      let totals = { given: 0, paid: 0, pending: 0, interest: 0, total: 0 };
 
-      const users = await LoanUser.findAll({
-        where,
-        order: [["sno", "ASC"]],
-      });
-
-      let totalGiven = 0,
-        totalPaid = 0,
-        totalPending = 0,
-        totalInterest = 0,
-        totalFinal = 0;
-
-      /* ================= DATA ================= */
-      users.forEach((u) => {
-        const principal = Number(u.givenAmount || 0);
+      users.forEach(u => {
         const paid = Number(u.paid || 0);
-        const interest = Number(u.interest || 0);
         const total = Number(u.tamount || 0);
         const pending = total - paid;
 
-        totalGiven += principal;
-        totalPaid += paid;
-        totalPending += pending;
-        totalInterest += interest;
-        totalFinal += total;
+        totals.given += Number(u.givenAmount || 0);
+        totals.paid += paid;
+        totals.pending += pending;
+        totals.interest += Number(u.interest || 0);
+        totals.total += total;
 
         sheet.addRow({
           ...u.toJSON(),
           pending,
           givenDate: formatDateDMY(u.givenDate),
-          lastDate: formatDateDMY(u.lastDate),
+          lastDate: formatDateDMY(u.lastDate)
         });
       });
 
-      /* ================= TOTAL ================= */
-      const totalRow = sheet.addRow({
+      sheet.addRow({
         name: "TOTAL",
-        givenAmount: totalGiven,
-        paid: totalPaid,
-        pending: totalPending,
-        interest: totalInterest,
-        tamount: totalFinal,
-      });
-      totalRow.font = { bold: true };
+        givenAmount: totals.given,
+        paid: totals.paid,
+        pending: totals.pending,
+        interest: totals.interest,
+        tamount: totals.total
+      }).font = { bold: true };
 
-      /* ================= DOWNLOAD ================= */
       res.setHeader(
         "Content-Disposition",
         `attachment; filename=customers_${Date.now()}.xlsx`
       );
-
       await workbook.xlsx.write(res);
       return res.end();
     }
@@ -483,111 +468,67 @@ const downloadReport = async (req, res, next) => {
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet("Collections");
 
-      const columns = [
+      sheet.columns = [
         { header: "S.No", key: "sno", width: 8 },
         { header: "Name", key: "name", width: 20 },
         { header: "Date", key: "date", width: 15 },
         { header: "Amount", key: "amount", width: 15 },
       ];
 
-      /* ================= SET COLUMNS FIRST ================= */
-      sheet.columns = columns;
-
-      /* ================= TITLE (FIXED) ================= */
-      sheet.mergeCells(1, 1, 1, columns.length);
-
-      // ✅ SET VALUE AFTER MERGE
-      const titleCell = sheet.getCell("A1");
-      titleCell.value = headerText;
-      titleCell.font = { bold: true };
-      titleCell.alignment = {
-        horizontal: "center",
-        vertical: "middle",
-        wrapText: true,
-      };
-
-      sheet.getRow(1).height = 40;
+      sheet.mergeCells(1, 1, 1, 4);
+      sheet.getCell("A1").value = headerText;
+      sheet.getRow(1).font = { bold: true };
+      sheet.getRow(1).alignment = { horizontal: "center" };
 
       sheet.addRow([]);
       sheet.addRow([]);
+      sheet.addRow(["S.No", "Name", "Date", "Amount"]).font = { bold: true };
 
-      /* ================= HEADERS ================= */
-      const headerRow = sheet.addRow(columns.map(c => c.header));
-      headerRow.font = { bold: true };
-
-      /* =====================================================
-         1️⃣ FETCH ONLY VALID USERS
-      ===================================================== */
       const users = await LoanUser.findAll({
-        where: {
-          ...(section && { section }),
-          sno: { [Op.ne]: null },
-          name: { [Op.ne]: null },
-        },
-        attributes: ["loanId", "sno", "name"],
-        order: [["sno", "ASC"]],
+        where: { ...(section && { section }) },
+        attributes: ["loanId", "sno", "name"]
       });
 
-      if (!users.length) {
-        return res.status(404).json({ message: "No valid users found" });
-      }
-
-      /* ================= USER MAP ================= */
       const userMap = {};
-      users.forEach(u => {
-        if (u.sno && u.name) userMap[u.loanId] = u;
-      });
+      users.forEach(u => (userMap[u.loanId] = u));
 
-      const validLoanIds = Object.keys(userMap);
-
-      /* ================= COLLECTIONS ================= */
       const collections = await LoanTable.findAll({
         where: {
-          loanId: { [Op.in]: validLoanIds },
+          loanId: { [Op.in]: Object.keys(userMap) },
+          date: dateRange
         },
         order: [["date", "ASC"]],
       });
 
-      let totalCollection = 0;
+      let total = 0;
 
       collections.forEach(c => {
-        const user = userMap[c.loanId];
-        if (!user) return;
-
-        const amt = Number(c.amount || 0);
-        totalCollection += amt;
+        const u = userMap[c.loanId];
+        if (!u) return;
+        total += Number(c.amount || 0);
 
         sheet.addRow({
-          sno: user.sno,
-          name: user.name,
+          sno: u.sno,
+          name: u.name,
           date: formatDateDMY(c.date),
-          amount: amt,
+          amount: c.amount
         });
       });
 
-      /* ================= TOTAL ================= */
-      const totalRow = sheet.addRow({
-        name: "TOTAL",
-        amount: totalCollection,
-      });
-      totalRow.font = { bold: true };
+      sheet.addRow({ name: "TOTAL", amount: total }).font = { bold: true };
 
-      /* ================= DOWNLOAD ================= */
       res.setHeader(
         "Content-Disposition",
         `attachment; filename=collections_${Date.now()}.xlsx`
       );
-
       await workbook.xlsx.write(res);
       return res.end();
     }
-
 
     /* ======================================================
        3️⃣ FULL DATA → PDF
     ====================================================== */
     if (dataType === "Full Data") {
-
       const doc = new PDFDocument({ margin: 40, size: "A4" });
 
       res.setHeader("Content-Type", "application/pdf");
@@ -598,152 +539,44 @@ const downloadReport = async (req, res, next) => {
 
       doc.pipe(res);
 
-      /* -------------------- HELPERS -------------------- */
-
-      const BOTTOM_MARGIN = 50;
-
-      const ensureSpace = (height) => {
-        if (doc.y + height > doc.page.height - BOTTOM_MARGIN) {
-          doc.addPage();
-        }
+      const ensureSpace = h => {
+        if (doc.y + h > doc.page.height - 50) doc.addPage();
       };
 
-      const drawFooter = () => {
-        doc.fontSize(8)
-          .fillColor("#888")
-          .text(
-            `Generated on ${new Date().toLocaleString()}`,
-            40,
-            doc.page.height - 40,
-            { align: "center" }
-          );
-      };
-
-      const drawTableHeader = () => {
-        ensureSpace(25);
-        const y = doc.y;
-        doc.rect(45, y, 515, 15).fill("#eeeeee");
-        doc.fillColor("#000").font("Helvetica-Bold").fontSize(9);
-        doc.text("S.No", 50, y + 3);
-        doc.text("Date", 150, y + 3);
-        doc.text("Amount", 350, y + 3);
-        doc.moveDown(1);
-      };
-
-      doc.on("pageAdded", drawFooter);
-      drawFooter();
-
-      /* -------------------- DOCUMENT HEADER -------------------- */
-
-      doc.font("Helvetica-Bold")
-        .fontSize(16)
+      doc.fontSize(16).font("Helvetica-Bold")
         .text("Full Customer Loan Report", { align: "center" });
-
-      doc.moveDown(0.5);
-
-      doc.font("Helvetica")
-        .fontSize(10)
-        .text("Generated Loan Report", { align: "center" });
-
       doc.moveDown(2);
 
-      /* -------------------- FETCH USERS -------------------- */
-
       const users = await LoanUser.findAll({
-        where: {
-          ...(section && { section }),
-        },
+        where: { ...(section && { section }), givenDate: dateRange },
         order: [["sno", "ASC"]],
       });
 
-      /* -------------------- USERS LOOP -------------------- */
-
       for (const u of users) {
-        // 🔒 Ensure space for entire customer block
-        ensureSpace(260);
-
-        /* ---------- CUSTOMER HEADER ---------- */
-        const headerY = doc.y;
-        doc.rect(40, headerY, 515, 20).fill("#f2f2f2");
-        doc.fillColor("#000")
-          .font("Helvetica-Bold")
-          .fontSize(11)
-          .text(`Customer: ${u.name} (S.No: ${u.sno})`, 45, headerY + 5);
-
-        doc.moveDown(2);
-
-        /* ---------- CUSTOMER DETAILS ---------- */
-        const startY = doc.y;
-        doc.font("Helvetica").fontSize(9);
-
-        // LEFT COLUMN
-        doc.text(`Loan ID: ${u.loanId}`, 45, startY);
-        doc.text(`Area: ${u.area}`, 45);
-        doc.text(`Address: ${u.address}`, 45);
-        doc.text(`Alt Phone: ${u.alternativeNumber || "N/A"}`, 45);
-        doc.text(`Paid: Rs. ${u.paid}`, 45);
-        doc.text(`Interest %: ${u.interestPercent || 0}%`, 45);
-        doc.text(`Total Amount: Rs. ${u.tamount}`, 45);
-        doc.text(`Last Date: ${formatDateDMY(u.lastDate)}`, 45);
-
-        // RIGHT COLUMN
-        doc.y = startY;
-        doc.text(`Section: ${u.section}`, 300);
-        doc.text(`Phone: ${u.phoneNumber}`, 300);
-        doc.text(`Given Amount: Rs. ${u.givenAmount}`, 300);
-        doc.text(
-          `Pending: Rs. ${(Number(u.tamount) || 0) - (Number(u.paid) || 0)}`,
-          300
-        );
-        doc.text(`Interest: Rs. ${u.interest || 0}`, 300);
-        doc.text(`Verified By: ${u.verifiedBy || "N/A"}`, 300);
-        doc.text(`Verified No: ${u.verifiedByNo || "N/A"}`, 300);
-
-        doc.moveDown(2);
-
-        /* ---------- COLLECTIONS ---------- */
-        ensureSpace(60);
-        doc.font("Helvetica-Bold").text("Collections History", 45);
-        doc.moveDown(0.5);
-
-        drawTableHeader();
+        ensureSpace(250);
+        doc.fontSize(11).font("Helvetica-Bold")
+          .text(`Customer: ${u.name} (S.No: ${u.sno})`);
+        doc.moveDown(1);
 
         const collections = await LoanTable.findAll({
-          where: { loanId: u.loanId },
-          order: [["date", "ASC"]],
+          where: { loanId: u.loanId, date: dateRange }
         });
 
-        let totalCollected = 0;
-        doc.font("Helvetica").fontSize(9);
+        collections.forEach((c, i) => {
+          ensureSpace(20);
+          doc.fontSize(9).font("Helvetica")
+            .text(`${i + 1}. ${formatDateDMY(c.date)} - Rs.${c.amount}`);
+        });
 
-        for (let i = 0; i < collections.length; i++) {
-          ensureSpace(18);
-
-          const c = collections[i];
-          totalCollected += Number(c.amount || 0);
-
-          doc.text(i + 1, 50);
-          doc.text(formatDateDMY(c.date), 150, doc.y - 10);
-          doc.text(`Rs. ${c.amount}`, 350, doc.y - 10);
-        }
-
-        ensureSpace(30);
-        doc.moveDown(1);
-        doc.font("Helvetica-Bold").text(
-          `Total Collected: Rs. ${totalCollected}`,
-          300
-        );
-
-        doc.moveDown(2);
-        doc.moveTo(40, doc.y).lineTo(550, doc.y).strokeColor("#ccc").stroke();
         doc.moveDown(2);
       }
 
       doc.end();
-
-
+      return;
     }
-    res.status(400).json({ message: "Invalid dataType" });
+
+    return res.status(400).json({ message: "Invalid dataType" });
+
   } catch (error) {
     next(error);
   }
