@@ -598,6 +598,7 @@ const downloadReport = async (req, res, next) => {
       doc.pipe(res);
 
       const PAGE_BOTTOM = 750;
+      const LINE_GAP = 4;
 
       /* ================= HELPERS ================= */
 
@@ -607,107 +608,121 @@ const downloadReport = async (req, res, next) => {
         }
       };
 
+      /**
+       * Draws label + value safely (supports multiline)
+       * Returns height consumed
+       */
       const drawKeyValue = (label, value, x, width) => {
+        const startY = doc.y;
+
         doc.font("Helvetica-Bold").text(label, x, doc.y, { continued: true });
         doc.font("Helvetica").text(value ?? "N/A", {
           width,
           continued: false,
         });
+
+        const heightUsed = doc.y - startY + LINE_GAP;
+        doc.y = startY + heightUsed;
+        return heightUsed;
       };
 
       const drawDivider = () => {
         ensureSpace(20);
-        doc.moveDown(1);
+        doc.moveDown(0.8);
         doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor("#cccccc").stroke();
-        doc.moveDown(1.5);
+        doc.moveDown(1);
       };
 
-      /* ================= REPORT HEADER ================= */
+      /* ================= HEADER ================= */
 
-      doc.fontSize(16)
-        .font("Helvetica-Bold")
-        .text("Full Customer Loan Report", { align: "center" });
+      doc.fontSize(16).font("Helvetica-Bold").text(
+        "Full Customer Loan Report",
+        { align: "center" }
+      );
 
       doc.moveDown(0.5);
-
-      doc.fontSize(10)
-        .font("Helvetica")
-        .text(headerText, { align: "center" });
-
+      doc.fontSize(10).font("Helvetica").text(headerText, { align: "center" });
       doc.moveDown(2);
 
       /* ================= FETCH USERS ================= */
 
       const users = await LoanUser.findAll({
-        where: {
-          ...(section && { section }),
-        },
+        where: { ...(section && { section }) },
         order: [["sno", "ASC"]],
       });
 
-      /* ================= LOOP USERS ================= */
+      /* ================= USERS LOOP ================= */
 
       for (const u of users) {
-        ensureSpace(220);
+        ensureSpace(260);
 
         /* -------- CUSTOMER HEADER -------- */
 
-        doc.rect(40, doc.y, 515, 22).fill("#f2f2f2");
-        doc.fillColor("#000"); // 🔴 VERY IMPORTANT
+        const headerY = doc.y;
+        doc.rect(40, headerY, 515, 22).fill("#f2f2f2");
+        doc.fillColor("#000");
 
-        doc
-          .font("Helvetica-Bold")
+        doc.font("Helvetica-Bold")
           .fontSize(11)
-          .text(`Customer: ${u.name} (S.No: ${u.sno})`, 45, doc.y - 17);
+          .text(`Customer: ${u.name} (S.No: ${u.sno})`, 45, headerY + 6);
 
-        doc.moveDown(1.5);
+        doc.y = headerY + 30;
         doc.fontSize(9);
 
         const leftX = 45;
         const rightX = 300;
         const colWidth = 230;
+
         const startY = doc.y;
+        let leftHeight = 0;
+        let rightHeight = 0;
 
         /* -------- LEFT COLUMN -------- */
 
-        drawKeyValue("Loan ID: ", u.loanId, leftX, colWidth);
-        drawKeyValue("Area: ", u.area, leftX, colWidth);
-        drawKeyValue("Address: ", u.address, leftX, colWidth);
-        drawKeyValue("Alt Phone: ", u.alternativeNumber, leftX, colWidth);
-        drawKeyValue("H/O / W/O: ", u.houseWifeOrSonOf, leftX, colWidth);
-        drawKeyValue("Refer Number: ", u.referNumber, leftX, colWidth);
-        drawKeyValue("Paid: Rs. ", u.paid, leftX, colWidth);
-        drawKeyValue("Interest %: ", `${u.interestPercent || 0}%`, leftX, colWidth);
-        drawKeyValue("Total Amount: Rs. ", u.tamount, leftX, colWidth);
-        drawKeyValue("Last Date: ", formatDateDMY(u.lastDate), leftX, colWidth);
-        drawKeyValue("Verified By: ", u.verifiedBy, leftX, colWidth);
+        leftHeight += drawKeyValue("Loan ID: ", u.loanId, leftX, colWidth);
+        leftHeight += drawKeyValue("Area: ", u.area, leftX, colWidth);
+        leftHeight += drawKeyValue("Address: ", u.address, leftX, colWidth);
+        leftHeight += drawKeyValue("Alt Phone: ", u.alternativeNumber, leftX, colWidth);
+        leftHeight += drawKeyValue("H/O / W/O: ", u.houseWifeOrSonOf, leftX, colWidth);
+        leftHeight += drawKeyValue("Refer Number: ", u.referNumber, leftX, colWidth);
+        leftHeight += drawKeyValue("Paid: Rs. ", u.paid, leftX, colWidth);
+        leftHeight += drawKeyValue(
+          "Interest %: ",
+          `${u.interestPercent || 0}%`,
+          leftX,
+          colWidth
+        );
+        leftHeight += drawKeyValue("Total Amount: Rs. ", u.tamount, leftX, colWidth);
+        leftHeight += drawKeyValue("Last Date: ", formatDateDMY(u.lastDate), leftX, colWidth);
+        leftHeight += drawKeyValue("Verified By: ", u.verifiedBy, leftX, colWidth);
 
         /* -------- RIGHT COLUMN -------- */
 
         doc.y = startY;
 
-        drawKeyValue("Section: ", u.section, rightX, colWidth);
-        drawKeyValue("Day: ", u.day, rightX, colWidth);
-        drawKeyValue("Phone: ", u.phoneNumber, rightX, colWidth);
-        drawKeyValue("Work: ", u.work, rightX, colWidth);
-        drawKeyValue("Refer Name: ", u.referName, rightX, colWidth);
-        drawKeyValue("Given Amount: Rs. ", u.givenAmount, rightX, colWidth);
-        drawKeyValue(
+        rightHeight += drawKeyValue("Section: ", u.section, rightX, colWidth);
+        rightHeight += drawKeyValue("Day: ", u.day, rightX, colWidth);
+        rightHeight += drawKeyValue("Phone: ", u.phoneNumber, rightX, colWidth);
+        rightHeight += drawKeyValue("Work: ", u.work, rightX, colWidth);
+        rightHeight += drawKeyValue("Refer Name: ", u.referName, rightX, colWidth);
+        rightHeight += drawKeyValue("Given Amount: Rs. ", u.givenAmount, rightX, colWidth);
+        rightHeight += drawKeyValue(
           "Pending: Rs. ",
           (Number(u.tamount) || 0) - (Number(u.paid) || 0),
           rightX,
           colWidth
         );
-        drawKeyValue("Interest: Rs. ", u.interest, rightX, colWidth);
-        drawKeyValue("Given Date: ", formatDateDMY(u.givenDate), rightX, colWidth);
-        drawKeyValue("Additional Info: ", u.additionalInfo, rightX, colWidth);
-        drawKeyValue("Verified No: ", u.verifiedByNo, rightX, colWidth);
+        rightHeight += drawKeyValue("Interest: Rs. ", u.interest, rightX, colWidth);
+        rightHeight += drawKeyValue("Given Date: ", formatDateDMY(u.givenDate), rightX, colWidth);
+        rightHeight += drawKeyValue("Additional Info: ", u.additionalInfo, rightX, colWidth);
+        rightHeight += drawKeyValue("Verified No: ", u.verifiedByNo, rightX, colWidth);
 
-        doc.moveDown(1.5);
+        /* ---- Sync columns ---- */
+        doc.y = startY + Math.max(leftHeight, rightHeight) + 10;
 
         /* ================= COLLECTIONS ================= */
 
-        ensureSpace(80);
+        ensureSpace(100);
         doc.font("Helvetica-Bold").text("Collections History", 45);
         doc.moveDown(0.5);
 
@@ -715,15 +730,15 @@ const downloadReport = async (req, res, next) => {
           ensureSpace(30);
           const y = doc.y;
 
-          doc.rect(45, y, 515, 16).fill("#eeeeee");
+          doc.rect(45, y, 515, 18).fill("#eeeeee");
           doc.fillColor("#000");
 
           doc.fontSize(9).font("Helvetica-Bold");
-          doc.text("S.No", 50, y + 4);
-          doc.text("Date", 150, y + 4);
-          doc.text("Amount", 350, y + 4);
+          doc.text("S.No", 50, y + 5);
+          doc.text("Date", 150, y + 5);
+          doc.text("Amount", 350, y + 5);
 
-          doc.moveDown(1);
+          doc.y = y + 22;
         };
 
         drawTableHeader();
@@ -736,26 +751,29 @@ const downloadReport = async (req, res, next) => {
         let totalCollected = 0;
 
         collections.forEach((c, i) => {
-          ensureSpace(20);
+          ensureSpace(22);
 
-          if (doc.y + 20 > PAGE_BOTTOM) {
+          if (doc.y + 22 > PAGE_BOTTOM) {
             doc.addPage();
             drawTableHeader();
           }
 
           totalCollected += Number(c.amount || 0);
 
+          const rowY = doc.y;
           doc.font("Helvetica").fontSize(9);
-          doc.text(i + 1, 50);
-          doc.text(formatDateDMY(c.date), 150);
-          doc.text(`Rs. ${c.amount}`, 350);
+          doc.text(i + 1, 50, rowY);
+          doc.text(formatDateDMY(c.date), 150, rowY);
+          doc.text(`Rs. ${Number(c.amount).toFixed(2)}`, 350, rowY);
+
+          doc.y = rowY + 18;
         });
 
-        /* -------- TOTAL -------- */
-
-        doc.moveDown(1);
-        ensureSpace(20);
-        doc.font("Helvetica-Bold").text(`Total Collected: Rs. ${totalCollected}`, 350);
+        doc.moveDown(0.5);
+        doc.font("Helvetica-Bold").text(
+          `Total Collected: Rs. ${totalCollected}`,
+          350
+        );
 
         drawDivider();
       }
@@ -763,6 +781,7 @@ const downloadReport = async (req, res, next) => {
       doc.end();
       return;
     }
+
 
     res.status(400).json({ message: "Invalid dataType" });
   } catch (error) {
