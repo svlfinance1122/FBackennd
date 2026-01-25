@@ -648,19 +648,19 @@ const downloadReport = async (req, res, next) => {
       /* ================= LOOP USERS ================= */
 
       for (const u of users) {
-        ensureSpace(200);
+        ensureSpace(220);
 
         /* -------- CUSTOMER HEADER -------- */
 
         doc.rect(40, doc.y, 515, 22).fill("#f2f2f2");
+        doc.fillColor("#000"); // 🔴 VERY IMPORTANT
+
         doc
-          .fillColor("#000")
           .font("Helvetica-Bold")
           .fontSize(11)
           .text(`Customer: ${u.name} (S.No: ${u.sno})`, 45, doc.y - 17);
 
         doc.moveDown(1.5);
-
         doc.fontSize(9);
 
         const leftX = 45;
@@ -670,39 +670,38 @@ const downloadReport = async (req, res, next) => {
 
         /* -------- LEFT COLUMN -------- */
 
-        drawKeyValue(doc, "Loan ID: ", u.loanId, leftX, colWidth);
-        drawKeyValue(doc, "Area: ", u.area, leftX, colWidth);
-        drawKeyValue(doc, "Address: ", u.address, leftX, colWidth);
-        drawKeyValue(doc, "Alt Phone: ", u.alternativeNumber, leftX, colWidth);
-        drawKeyValue(doc, "H/O / W/O: ", u.houseWifeOrSonOf, leftX, colWidth);
-        drawKeyValue(doc, "Refer Number: ", u.referNumber, leftX, colWidth);
-        drawKeyValue(doc, "Paid: Rs. ", u.paid, leftX, colWidth);
-        drawKeyValue(doc, "Interest %: ", `${u.interestPercent || 0}%`, leftX, colWidth);
-        drawKeyValue(doc, "Total Amount: Rs. ", u.tamount, leftX, colWidth);
-        drawKeyValue(doc, "Last Date: ", formatDateDMY(u.lastDate), leftX, colWidth);
-        drawKeyValue(doc, "Verified By: ", u.verifiedBy, leftX, colWidth);
+        drawKeyValue("Loan ID: ", u.loanId, leftX, colWidth);
+        drawKeyValue("Area: ", u.area, leftX, colWidth);
+        drawKeyValue("Address: ", u.address, leftX, colWidth);
+        drawKeyValue("Alt Phone: ", u.alternativeNumber, leftX, colWidth);
+        drawKeyValue("H/O / W/O: ", u.houseWifeOrSonOf, leftX, colWidth);
+        drawKeyValue("Refer Number: ", u.referNumber, leftX, colWidth);
+        drawKeyValue("Paid: Rs. ", u.paid, leftX, colWidth);
+        drawKeyValue("Interest %: ", `${u.interestPercent || 0}%`, leftX, colWidth);
+        drawKeyValue("Total Amount: Rs. ", u.tamount, leftX, colWidth);
+        drawKeyValue("Last Date: ", formatDateDMY(u.lastDate), leftX, colWidth);
+        drawKeyValue("Verified By: ", u.verifiedBy, leftX, colWidth);
 
         /* -------- RIGHT COLUMN -------- */
 
         doc.y = startY;
 
-        drawKeyValue(doc, "Section: ", u.section, rightX, colWidth);
-        drawKeyValue(doc, "Day: ", u.day, rightX, colWidth);
-        drawKeyValue(doc, "Phone: ", u.phoneNumber, rightX, colWidth);
-        drawKeyValue(doc, "Work: ", u.work, rightX, colWidth);
-        drawKeyValue(doc, "Refer Name: ", u.referName, rightX, colWidth);
-        drawKeyValue(doc, "Given Amount: Rs. ", u.givenAmount, rightX, colWidth);
+        drawKeyValue("Section: ", u.section, rightX, colWidth);
+        drawKeyValue("Day: ", u.day, rightX, colWidth);
+        drawKeyValue("Phone: ", u.phoneNumber, rightX, colWidth);
+        drawKeyValue("Work: ", u.work, rightX, colWidth);
+        drawKeyValue("Refer Name: ", u.referName, rightX, colWidth);
+        drawKeyValue("Given Amount: Rs. ", u.givenAmount, rightX, colWidth);
         drawKeyValue(
-          doc,
           "Pending: Rs. ",
           (Number(u.tamount) || 0) - (Number(u.paid) || 0),
           rightX,
           colWidth
         );
-        drawKeyValue(doc, "Interest: Rs. ", u.interest, rightX, colWidth);
-        drawKeyValue(doc, "Given Date: ", formatDateDMY(u.givenDate), rightX, colWidth);
-        drawKeyValue(doc, "Additional Info: ", u.additionalInfo, rightX, colWidth);
-        drawKeyValue(doc, "Verified No: ", u.verifiedByNo, rightX, colWidth);
+        drawKeyValue("Interest: Rs. ", u.interest, rightX, colWidth);
+        drawKeyValue("Given Date: ", formatDateDMY(u.givenDate), rightX, colWidth);
+        drawKeyValue("Additional Info: ", u.additionalInfo, rightX, colWidth);
+        drawKeyValue("Verified No: ", u.verifiedByNo, rightX, colWidth);
 
         doc.moveDown(1.5);
 
@@ -715,11 +714,15 @@ const downloadReport = async (req, res, next) => {
         const drawTableHeader = () => {
           ensureSpace(30);
           const y = doc.y;
+
           doc.rect(45, y, 515, 16).fill("#eeeeee");
-          doc.fillColor("#000").fontSize(9).font("Helvetica-Bold");
+          doc.fillColor("#000");
+
+          doc.fontSize(9).font("Helvetica-Bold");
           doc.text("S.No", 50, y + 4);
           doc.text("Date", 150, y + 4);
           doc.text("Amount", 350, y + 4);
+
           doc.moveDown(1);
         };
 
