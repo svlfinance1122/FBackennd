@@ -695,6 +695,7 @@ const downloadReport = async (req, res, next) => {
         leftHeight += drawKeyValue("Total Amount: Rs. ", u.tamount, leftX, colWidth);
         leftHeight += drawKeyValue("Last Date: ", formatDateDMY(u.lastDate), leftX, colWidth);
         leftHeight += drawKeyValue("Verified By: ", u.verifiedBy, leftX, colWidth);
+        leftHeight += drawKeyValue("Verified No: ", u.verifiedByNo, leftX, colWidth);
 
         /* -------- RIGHT COLUMN -------- */
 
@@ -715,7 +716,7 @@ const downloadReport = async (req, res, next) => {
         rightHeight += drawKeyValue("Interest: Rs. ", u.interest, rightX, colWidth);
         rightHeight += drawKeyValue("Given Date: ", formatDateDMY(u.givenDate), rightX, colWidth);
         rightHeight += drawKeyValue("Additional Info: ", u.additionalInfo, rightX, colWidth);
-        rightHeight += drawKeyValue("Verified No: ", u.verifiedByNo, rightX, colWidth);
+
 
         /* ---- Sync columns ---- */
         doc.y = startY + Math.max(leftHeight, rightHeight) + 10;

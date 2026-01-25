@@ -198,7 +198,7 @@ const addAreaToUser = async (req, res, next) => {
     }
 
     // ✅ Trim spaces only
-    areaName = areaName.trim();
+    areaName = areaName.trim().toLowerCase();
 
     const usersAll = await Users.findAll({
       where: { role: "Admin" }
