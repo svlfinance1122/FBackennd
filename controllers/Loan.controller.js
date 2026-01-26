@@ -356,222 +356,445 @@ const formatDateDMY = (dateStr) => {
 /* ======================================================
    CONTROLLER
 ====================================================== */
-if (dataType === "Full Data") {
-  const doc = new PDFDocument({ margin: 40, size: "A4" });
 
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename=full_report_${Date.now()}.pdf`
-  );
+const toISO = (dateStr) => {
+  const [dd, mm, yyyy] = dateStr.split("-");
+  return `${yyyy}-${mm}-${dd}`;
+};
 
-  doc.pipe(res);
-
-  const PAGE_BOTTOM = 750;
-  const GAP = 6;
-
-  /* ================= HELPERS ================= */
-
-  const ensureSpace = (height = 60) => {
-    if (doc.y + height > PAGE_BOTTOM) {
-      doc.addPage();
+const downloadReport = async (req, res, next) => {
+  try {
+    const { dataType, section, areas, day, fromDate, toDate } = req.body;
+    console.log(req.body)
+    if (!dataType || !fromDate || !toDate) {
+      return res.status(400).json({ message: "Missing required fields" });
     }
-  };
 
-  const safeValue = (val) => {
-    if (val === null || val === undefined || val === "") return "N/A";
-    return String(val);
-  };
+    const headerText = `Report: ${dataType} | Section: ${section || "All"
+      } | Area: ${areas?.join(", ") || "All"} | Day: ${day || "All"
+      } | From: ${fromDate} | To: ${toDate}`;
 
-  /**
-   * Draw label + value safely (NO overlap, NO empty collapse)
-   */
-  const drawKeyValue = (label, value, x, width) => {
-    const startY = doc.y;
+    /* ======================================================
+       1️⃣ CUSTOMER DATA → EXCEL
+    ====================================================== */
+    if (dataType === "Customer Data") {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Customers");
 
-    doc.font("Helvetica-Bold").text(label, x, startY);
+      const columns = [
+        { header: "S.No", key: "sno", width: 8 },
+        { header: "Loan ID", key: "loanId", width: 30 },
+        { header: "Section", key: "section", width: 12 },
+        { header: "Area", key: "area", width: 12 },
+        { header: "Day", key: "day", width: 15 },
+        { header: "Name", key: "name", width: 20 },
+        { header: "Address", key: "address", width: 25 },
+        { header: "Phone", key: "phoneNumber", width: 15 },
+        { header: "Alt Phone", key: "alternativeNumber", width: 15 },
+        { header: "Work", key: "work", width: 15 },
+        { header: "H/O / W/O", key: "houseWifeOrSonOf", width: 18 },
+        { header: "Given Amount", key: "givenAmount", width: 15 },
+        { header: "Paid", key: "paid", width: 12 },
+        { header: "Pending", key: "pending", width: 12 },
+        { header: "Interest", key: "interest", width: 12 },
+        { header: "Total", key: "tamount", width: 15 },
+        { header: "Given Date", key: "givenDate", width: 15 },
+        { header: "Last Date", key: "lastDate", width: 15 },
+      ];
 
-    doc.font("Helvetica").text(safeValue(value), {
-      width,
-      indent: 90, // keeps value away from label
-    });
+      sheet.columns = columns;
+      sheet.insertRow(1, [headerText]);
+      sheet.mergeCells(1, 1, 1, columns.length);
+      sheet.getRow(1).font = { bold: true };
 
-    const usedHeight = doc.y - startY;
-    doc.y = startY + usedHeight + GAP;
+      // sheet.addRow([]);
+      // sheet.addRow(columns.map((c) => c.header));
+      // sheet.getRow(3).font = { bold: true };
 
-    return usedHeight + GAP;
-  };
+      const where = {};
+      if (section) where.section = section;
+      if (areas?.length) where.area = { [Op.in]: areas };
+      if (section === "Weekly" && day) where.day = day;
+      if (fromDate && toDate) {
+        const fromISO = toISO(fromDate);
+        const toISODate = toISO(toDate);
 
-  const drawDivider = () => {
-    ensureSpace(20);
-    doc.moveDown(0.8);
-    doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor("#cccccc").stroke();
-    doc.moveDown(1);
-  };
-
-  /* ================= HEADER ================= */
-
-  doc.fontSize(16)
-    .font("Helvetica-Bold")
-    .text("Full Customer Loan Report", { align: "center" });
-
-  doc.moveDown(0.5);
-  doc.fontSize(10).font("Helvetica").text(headerText, { align: "center" });
-  doc.moveDown(2);
-
-  /* ================= FETCH USERS ================= */
-
-  const users = await LoanUser.findAll({
-    where: { ...(section && { section }) },
-    order: [["sno", "ASC"]],
-  });
-
-  /* ================= USERS LOOP ================= */
-
-  for (const u of users) {
-    ensureSpace(260);
-
-    /* -------- CUSTOMER HEADER -------- */
-
-    const headerY = doc.y;
-    doc.rect(40, headerY, 515, 22).fill("#f2f2f2");
-    doc.fillColor("#000");
-
-    doc
-      .font("Helvetica-Bold")
-      .fontSize(11)
-      .text(`Customer: ${safeValue(u.name)} (S.No: ${safeValue(u.sno)})`, 45, headerY + 6);
-
-    doc.y = headerY + 30;
-    doc.fontSize(9);
-
-    const leftX = 45;
-    const rightX = 300;
-    const colWidth = 230;
-
-    const startY = doc.y;
-    let leftHeight = 0;
-    let rightHeight = 0;
-
-    /* -------- LEFT COLUMN -------- */
-
-    leftHeight += drawKeyValue("Loan ID:", u.loanId, leftX, colWidth);
-    leftHeight += drawKeyValue("Area:", u.area, leftX, colWidth);
-    leftHeight += drawKeyValue("Address:", u.address, leftX, colWidth);
-    leftHeight += drawKeyValue("Alt Phone:", u.alternativeNumber, leftX, colWidth);
-    leftHeight += drawKeyValue("H/O / W/O:", u.houseWifeOrSonOf, leftX, colWidth);
-    leftHeight += drawKeyValue("Refer Number:", u.referNumber, leftX, colWidth);
-    leftHeight += drawKeyValue("Paid:", u.paid ? `Rs. ${u.paid}` : null, leftX, colWidth);
-    leftHeight += drawKeyValue(
-      "Interest %:",
-      u.interestPercent !== null ? `${u.interestPercent}%` : null,
-      leftX,
-      colWidth
-    );
-    leftHeight += drawKeyValue(
-      "Total Amount:",
-      u.tamount ? `Rs. ${u.tamount}` : null,
-      leftX,
-      colWidth
-    );
-    leftHeight += drawKeyValue("Last Date:", formatDateDMY(u.lastDate), leftX, colWidth);
-    leftHeight += drawKeyValue("Verified By:", u.verifiedBy, leftX, colWidth);
-
-    /* -------- RIGHT COLUMN -------- */
-
-    doc.y = startY;
-
-    rightHeight += drawKeyValue("Section:", u.section, rightX, colWidth);
-    rightHeight += drawKeyValue("Day:", u.day, rightX, colWidth);
-    rightHeight += drawKeyValue("Phone:", u.phoneNumber, rightX, colWidth);
-    rightHeight += drawKeyValue("Work:", u.work, rightX, colWidth);
-    rightHeight += drawKeyValue("Refer Name:", u.referName, rightX, colWidth);
-    rightHeight += drawKeyValue(
-      "Given Amount:",
-      u.givenAmount ? `Rs. ${u.givenAmount}` : null,
-      rightX,
-      colWidth
-    );
-    rightHeight += drawKeyValue(
-      "Pending:",
-      u.tamount && u.paid ? `Rs. ${u.tamount - u.paid}` : null,
-      rightX,
-      colWidth
-    );
-    rightHeight += drawKeyValue(
-      "Interest:",
-      u.interest ? `Rs. ${u.interest}` : null,
-      rightX,
-      colWidth
-    );
-    rightHeight += drawKeyValue("Given Date:", formatDateDMY(u.givenDate), rightX, colWidth);
-    rightHeight += drawKeyValue("Additional Info:", u.additionalInfo, rightX, colWidth);
-    rightHeight += drawKeyValue("Verified No:", u.verifiedByNo, rightX, colWidth);
-
-    /* ---- Sync both columns ---- */
-    doc.y = startY + Math.max(leftHeight, rightHeight) + 10;
-
-    /* ================= COLLECTIONS ================= */
-
-    ensureSpace(100);
-    doc.font("Helvetica-Bold").text("Collections History", 45);
-    doc.moveDown(0.5);
-
-    const drawTableHeader = () => {
-      ensureSpace(30);
-      const y = doc.y;
-
-      doc.rect(45, y, 515, 18).fill("#eeeeee");
-      doc.fillColor("#000");
-
-      doc.font("Helvetica-Bold").fontSize(9);
-      doc.text("S.No", 50, y + 5);
-      doc.text("Date", 150, y + 5);
-      doc.text("Amount", 350, y + 5);
-
-      doc.y = y + 22;
-    };
-
-    drawTableHeader();
-
-    const collections = await LoanTable.findAll({
-      where: { loanId: u.loanId },
-      order: [["date", "ASC"]],
-    });
-
-    let totalCollected = 0;
-
-    collections.forEach((c, i) => {
-      ensureSpace(22);
-
-      if (doc.y + 22 > PAGE_BOTTOM) {
-        doc.addPage();
-        drawTableHeader();
+        if (fromISO === toISODate) {
+          where.givenDate = {
+            [Op.eq]: fromISO,
+          };
+        } else {
+          where.givenDate = {
+            [Op.between]: [fromISO, toISODate],
+          };
+        }
       }
 
-      totalCollected += Number(c.amount || 0);
+      const users = await LoanUser.findAll({
+        where,
+        order: [["sno", "ASC"]],
+      });
+      console.log(users)
+      let totalGiven = 0, totalPaid = 0, totalPending = 0, totalInterest = 0, totalFinal = 0;
 
-      const rowY = doc.y;
-      doc.font("Helvetica").fontSize(9);
-      doc.text(i + 1, 50, rowY);
-      doc.text(formatDateDMY(c.date), 150, rowY);
-      doc.text(`Rs. ${Number(c.amount).toFixed(2)}`, 350, rowY);
+      users.forEach((u) => {
+        const principal = Number(u.givenAmount || 0);
+        const paid = Number(u.paid || 0);
+        const interest = Number(u.interest || 0);
+        const total = Number(u.tamount || 0);
+        const pending = total - paid;
 
-      doc.y = rowY + 18;
-    });
+        totalGiven += principal;
+        totalPaid += paid;
+        totalPending += pending;
+        totalInterest += interest;
+        totalFinal += total;
 
-    doc.moveDown(0.5);
-    doc.font("Helvetica-Bold").text(
-      `Total Collected: Rs. ${totalCollected}`,
-      350
-    );
+        sheet.addRow({
+          ...u.toJSON(),
+          pending,
+          givenDate: formatDateDMY(u.givenDate),
+          lastDate: formatDateDMY(u.lastDate),
+        });
+      });
 
-    drawDivider();
+      // Add Total Row
+      const totalRow = sheet.addRow({
+        houseWifeOrSonOf: "TOTAL",
+        givenAmount: totalGiven,
+        paid: totalPaid,
+        pending: totalPending,
+        interest: totalInterest,
+        tamount: totalFinal
+      });
+      totalRow.font = { bold: true };
+
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=customers_${Date.now()}.xlsx`
+      );
+      await workbook.xlsx.write(res);
+      return res.end();
+    }
+
+    /* ======================================================
+       2️⃣ COLLECTION → EXCEL
+    ====================================================== */
+    if (dataType === "Collection") {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Collections");
+
+      columns = [
+        { header: "S.No", key: "sno", width: 8 },
+        { header: "Name", key: "name", width: 20 },
+        { header: "Date", key: "date", width: 15 },
+        { header: "Amount", key: "amount", width: 15 },
+      ];
+      sheet.columns = columns;
+      sheet.insertRow(1, [headerText]);
+      sheet.mergeCells(1, 1, 1, 8);
+      sheet.getRow(1).font = { bold: true };
+
+      // sheet.addRow([]);
+      // sheet.addRow(sheet.columns.map((c) => c.header));
+      // sheet.getRow(3).font = { bold: true };
+
+      // const where = {};
+
+      // if (fromDate && toDate) {
+      //   // fromDate & toDate MUST be dd-mm-yyyy
+      //   where[Op.and] = [
+      //     Sequelize.where(
+      //       Sequelize.fn(
+      //         "TO_TIMESTAMP",
+      //         Sequelize.col("date"),
+      //         "DD-MM-YYYY HH24:MI:SS"
+      //       ),
+      //       {
+      //         [Op.between]: [
+      //           Sequelize.fn(
+      //             "TO_TIMESTAMP",
+      //             `${fromDate} 00:00:00`,
+      //             "DD-MM-YYYY HH24:MI:SS"
+      //           ),
+      //           Sequelize.fn(
+      //             "TO_TIMESTAMP",
+      //             `${toDate} 23:59:59`,
+      //             "DD-MM-YYYY HH24:MI:SS"
+      //           ),
+      //         ],
+      //       }
+      //     ),
+      //   ];
+      // }
+      // const collections = await LoanTable.findAll({
+      //   where: {
+      //     date: {
+      //       [Op.between]: [
+      //         new Date(`${fromDate}T00:00:00`),
+      //         new Date(`${toDate}T23:59:59`)
+      //       ]
+      //     }
+      //   }
+      //   ,
+      //   order: [["date", "ASC"]],
+      // });
+      // const toISO = (dateStr) => {
+      //   const [dd, mm, yyyy] = dateStr.split("-");
+      //   return `${yyyy}-${mm}-${dd}`;
+      // };
+      // const fromISO = `${toISO(fromDate)} 00:00:00`;
+      // const toISODate = `${toISO(toDate)} 23:59:59`;
+      // const collections = await LoanTable.findAll({
+      //   where: {
+      //     date: {
+      //       [Op.between]: [fromISO, toISODate],
+      //     },
+      //   },
+      //   order: [["date", "ASC"]],
+      // });
+
+      const fromISO = toISO(fromDate);
+      const toISODate = toISO(toDate);
+
+      let dateCondition = {};
+
+      if (fromISO === toISODate) {
+        // ✅ SAME DAY → exact match
+        dateCondition = { [Op.eq]: fromISO };
+      } else {
+        // ✅ RANGE
+        dateCondition = { [Op.between]: [fromISO, toISODate] };
+      }
+
+      const collections = await LoanTable.findAll({
+        where: {
+          date: dateCondition,
+        },
+        order: [["date", "ASC"]],
+      });
+
+
+      const loanIds = [...new Set(collections.map((c) => c.loanId))];
+      const users = await LoanUser.findAll({
+        where: { loanId: { [Op.in]: loanIds } },
+      });
+
+      console.log(users)
+      console.log(collections)
+      const userMap = {};
+      users.forEach((u) => (userMap[u.loanId] = u));
+
+      let totalCollection = 0;
+      collections.forEach((c) => {
+        const amt = Number(c.amount || 0);
+        totalCollection += amt;
+        sheet.addRow({
+          sno: userMap[c.loanId]?.sno,
+          name: userMap[c.loanId]?.name,
+          date: formatDateDMY(c.date),
+          amount: amt,
+        });
+      });
+
+      // Add Total Row
+      const totalRow = sheet.addRow({
+        date: "TOTAL",
+        amount: totalCollection
+      });
+      totalRow.font = { bold: true };
+
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=collections_${Date.now()}.xlsx`
+      );
+      await workbook.xlsx.write(res);
+      return res.end();
+    }
+
+    /* ======================================================
+       3️⃣ FULL DATA → PDF
+    ====================================================== */
+    if (dataType === "Full Data") {
+      const PDFDocument = require("pdfkit");
+      const doc = new PDFDocument({ margin: 40, size: "A4" });
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=full_report_${Date.now()}.pdf`
+      );
+
+      doc.pipe(res);
+
+      /* -------------------- CONSTANTS -------------------- */
+      const PAGE_BOTTOM = 750;
+      const START_Y = 50;
+      const ROW_HEIGHT = 14;
+      const LEFT_X = 45;
+      const RIGHT_X = 300;
+
+      /* -------------------- HELPERS -------------------- */
+      const checkPageBreak = (y, redrawHeader) => {
+        if (y > PAGE_BOTTOM) {
+          doc.addPage();
+          if (redrawHeader) redrawHeader();
+          return START_Y;
+        }
+        return y;
+      };
+
+      const drawCollectionsHeader = (y) => {
+        doc.rect(45, y, 515, 16).fill("#eeeeee");
+        doc.fillColor("#000").font("Helvetica-Bold").fontSize(9);
+        doc.text("S.No", 50, y + 4);
+        doc.text("Date", 200, y + 4);
+        doc.text("Amount", 400, y + 4);
+        return y + 16;
+      };
+
+      /* -------------------- DOCUMENT HEADER -------------------- */
+      doc.font("Helvetica-Bold").fontSize(16)
+        .text("Full Customer Loan Report", { align: "center" });
+
+      doc.font("Helvetica").fontSize(10)
+        .text(headerText, { align: "center" });
+
+      doc.moveDown(2);
+
+      /* -------------------- FETCH USERS -------------------- */
+
+      const where = {};
+      if (section) where.section = section;
+      if (areas?.length) where.area = { [Op.in]: areas };
+      if (section === "Weekly" && day) where.day = day;
+      if (fromDate && toDate) {
+        const fromISO = toISO(fromDate);
+        const toISODate = toISO(toDate);
+
+        if (fromISO === toISODate) {
+          where.givenDate = {
+            [Op.eq]: fromISO,
+          };
+        } else {
+          where.givenDate = {
+            [Op.between]: [fromISO, toISODate],
+          };
+        }
+      }
+
+      const users = await LoanUser.findAll({
+        where,
+        order: [["sno", "ASC"]],
+      });
+
+      /* -------------------- LOOP USERS -------------------- */
+      for (const u of users) {
+
+        /* ---------- CUSTOMER HEADER ---------- */
+        doc.rect(LEFT_X, doc.y, 515, 22).fill("#f2f2f2");
+        doc.fillColor("#000")
+          .font("Helvetica-Bold")
+          .fontSize(11)
+          .text(`Customer: ${u.name} (S.No: ${u.sno})`, LEFT_X + 5, doc.y + 6);
+
+        doc.y += 30;
+
+        /* ---------- CUSTOMER DETAILS ---------- */
+        let y = doc.y;
+        doc.font("Helvetica").fontSize(9);
+
+        const leftData = [
+          `Loan ID: ${u.loanId}`,
+          `Area: ${u.area}`,
+          `Address: ${u.address}`,
+          `Alt Phone: ${u.alternativeNumber || "N/A"}`,
+          `H/O / W/O: ${u.houseWifeOrSonOf || "N/A"}`,
+          `Refer No: ${u.referNumber || "N/A"}`,
+          `Paid: RS. ${u.paid}`,
+          `Interest %: ${u.interestPercent || 0}%`,
+          `Total Amount: RS. ${u.tamount}`,
+          `Last Date: ${formatDateDMY(u.lastDate)}`,
+          `Additional Info: ${u.additionalInfo || "N/A"}`,
+        ];
+
+        const rightData = [
+          `Section: ${u.section}`,
+          `Day: ${u.day || "N/A"}`,
+          `Phone: ${u.phoneNumber}`,
+          `Work: ${u.work || "N/A"}`,
+          `Refer Name: ${u.referName || "N/A"}`,
+          `Given Amount: RS. ${u.givenAmount}`,
+          `Pending: RS. ${(Number(u.tamount) || 0) - (Number(u.paid) || 0)}`,
+          `Interest: RS. ${u.interest || 0}`,
+          `Given Date: ${formatDateDMY(u.givenDate)}`,
+          `Verified No: ${u.verifiedByNo || "N/A"}`,
+        ];
+
+        for (let i = 0; i < leftData.length; i++) {
+          y = checkPageBreak(y);
+          doc.text(leftData[i], LEFT_X, y);
+          doc.text(rightData[i], RIGHT_X, y);
+          y += ROW_HEIGHT;
+        }
+
+        doc.y = y + 10;
+
+        /* ---------- COLLECTIONS TABLE ---------- */
+        doc.font("Helvetica-Bold").fontSize(10)
+          .text("Collections History", LEFT_X, doc.y);
+
+        doc.y += 10;
+        let tableY = drawCollectionsHeader(doc.y);
+
+        const collections = await LoanTable.findAll({
+          where: { loanId: u.loanId },
+          order: [["date", "ASC"]],
+        });
+
+        doc.font("Helvetica").fontSize(9);
+        let totalCollected = 0;
+
+        collections.forEach((c, index) => {
+          tableY = checkPageBreak(tableY, () => {
+            tableY = drawCollectionsHeader(START_Y);
+          });
+
+          doc.text(index + 1, 50, tableY);
+          doc.text(formatDateDMY(c.date), 200, tableY);
+          doc.text(`RS. ${c.amount}`, 400, tableY);
+
+          totalCollected += Number(c.amount || 0);
+          tableY += ROW_HEIGHT;
+        });
+
+        /* ---------- TOTAL ROW ---------- */
+        tableY = checkPageBreak(tableY + 10);
+        doc.font("Helvetica-Bold")
+          .text(`Total Collected: RS. ${totalCollected}`, 350, tableY);
+
+        /* ---------- SEPARATOR ---------- */
+        doc.y = tableY + 25;
+        doc.moveTo(40, doc.y).lineTo(550, doc.y).stroke("#cccccc");
+        doc.y += 20;
+
+        /* ---------- FINAL PAGE BREAK ---------- */
+        if (doc.y > 650) {
+          doc.addPage();
+          doc.y = START_Y;
+        }
+      }
+
+      doc.end();
+      return;
+    }
+
+
+    res.status(400).json({ message: "Invalid dataType" });
+  } catch (error) {
+    next(error);
   }
-
-  doc.end();
-  return;
-}
+};
 
 
 const renewLoan = async (req, res, next) => {
