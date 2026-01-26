@@ -496,65 +496,6 @@ const downloadReport = async (req, res, next) => {
       sheet.mergeCells(1, 1, 1, 8);
       sheet.getRow(1).font = { bold: true };
 
-      // sheet.addRow([]);
-      // sheet.addRow(sheet.columns.map((c) => c.header));
-      // sheet.getRow(3).font = { bold: true };
-
-      // const where = {};
-
-      // if (fromDate && toDate) {
-      //   // fromDate & toDate MUST be dd-mm-yyyy
-      //   where[Op.and] = [
-      //     Sequelize.where(
-      //       Sequelize.fn(
-      //         "TO_TIMESTAMP",
-      //         Sequelize.col("date"),
-      //         "DD-MM-YYYY HH24:MI:SS"
-      //       ),
-      //       {
-      //         [Op.between]: [
-      //           Sequelize.fn(
-      //             "TO_TIMESTAMP",
-      //             `${fromDate} 00:00:00`,
-      //             "DD-MM-YYYY HH24:MI:SS"
-      //           ),
-      //           Sequelize.fn(
-      //             "TO_TIMESTAMP",
-      //             `${toDate} 23:59:59`,
-      //             "DD-MM-YYYY HH24:MI:SS"
-      //           ),
-      //         ],
-      //       }
-      //     ),
-      //   ];
-      // }
-      // const collections = await LoanTable.findAll({
-      //   where: {
-      //     date: {
-      //       [Op.between]: [
-      //         new Date(`${fromDate}T00:00:00`),
-      //         new Date(`${toDate}T23:59:59`)
-      //       ]
-      //     }
-      //   }
-      //   ,
-      //   order: [["date", "ASC"]],
-      // });
-      // const toISO = (dateStr) => {
-      //   const [dd, mm, yyyy] = dateStr.split("-");
-      //   return `${yyyy}-${mm}-${dd}`;
-      // };
-      // const fromISO = `${toISO(fromDate)} 00:00:00`;
-      // const toISODate = `${toISO(toDate)} 23:59:59`;
-      // const collections = await LoanTable.findAll({
-      //   where: {
-      //     date: {
-      //       [Op.between]: [fromISO, toISODate],
-      //     },
-      //   },
-      //   order: [["date", "ASC"]],
-      // });
-
       const fromISO = toISO(fromDate);
       const toISODate = toISO(toDate);
 
@@ -577,10 +518,7 @@ const downloadReport = async (req, res, next) => {
 
 
       const loanIds = [...new Set(collections.map((c) => c.loanId))];
-      // const users = await LoanUser.findAll({
-      //   where: { loanId: { [Op.in]: loanIds }, section: section, area: area },
-      // },
-      // });
+
       const where = {};
       if (loanIds?.length) {
         where.loanId = { [Op.in]: loanIds };
@@ -605,6 +543,8 @@ const downloadReport = async (req, res, next) => {
 
       let totalCollection = 0;
       collections.forEach((c) => {
+        const user = userMap[c.loanId];
+        if (!user) return;
         const amt = Number(c.amount || 0);
         totalCollection += amt;
         sheet.addRow({
@@ -730,7 +670,6 @@ const downloadReport = async (req, res, next) => {
           `Interest %: ${u.interestPercent || 0}%`,
           `Total Amount: RS. ${u.tamount}`,
           `Last Date: ${formatDateDMY(u.lastDate)}`,
-          `Additional Info: ${u.additionalInfo || "N/A"}`,
         ];
 
         const rightData = [
