@@ -593,11 +593,10 @@ const downloadReport = async (req, res, next) => {
       const RIGHT_X = 300;
 
       /* -------------------- HELPERS -------------------- */
-      const checkPageBreak = (y, redrawHeader) => {
+      const checkPageBreak = (y, redrawTableHeader) => {
         if (y > PAGE_BOTTOM) {
           doc.addPage();
-          if (redrawHeader) redrawHeader();
-          return START_Y;
+          return redrawTableHeader ? redrawTableHeader(START_Y) : START_Y;
         }
         return y;
       };
@@ -631,7 +630,6 @@ const downloadReport = async (req, res, next) => {
       if (fromDate && toDate) {
         const fromISO = toISO(fromDate);
         const toISODate = toISO(toDate);
-
         where.givenDate =
           fromISO === toISODate
             ? { [Op.eq]: fromISO }
@@ -692,32 +690,32 @@ const downloadReport = async (req, res, next) => {
           y += ROW_HEIGHT;
         }
 
-        /* ---------- ADDITIONAL INFO (FIXED HEIGHT) ---------- */
+        /* ---------- ADDITIONAL INFO ---------- */
         y += ROW_HEIGHT;
-
         y = checkPageBreak(y);
+
         doc.font("Helvetica-Bold").text("Additional Info:", LEFT_X, y);
         doc.font("Helvetica").text(
           u.additionalInfo || "N/A",
           LEFT_X + 90,
           y,
-          {
-            width: 420,
-            height: ROW_HEIGHT * 2,
-            ellipsis: true,
-          }
+          { width: 420 }
         );
 
         y += ROW_HEIGHT * 3;
         doc.y = y;
 
         /* ---------- COLLECTIONS HISTORY ---------- */
-        doc.y += 20; // fixed gap
+        doc.y += 20;
+
+        // ✅ TITLE PRINTED ONLY ONCE
         doc.font("Helvetica-Bold")
           .fontSize(10)
           .text("Collections History", LEFT_X, doc.y);
 
         doc.y += 15;
+
+        // ✅ FIRST TABLE HEADER
         let tableY = drawCollectionsHeader(doc.y);
 
         const collections = await LoanTable.findAll({
@@ -729,8 +727,8 @@ const downloadReport = async (req, res, next) => {
         let totalCollected = 0;
 
         collections.forEach((c, index) => {
-          tableY = checkPageBreak(tableY, () => {
-            tableY = drawCollectionsHeader(START_Y);
+          tableY = checkPageBreak(tableY, (newY) => {
+            return drawCollectionsHeader(newY); // ✅ only table header
           });
 
           doc.text(index + 1, 50, tableY);
@@ -751,7 +749,7 @@ const downloadReport = async (req, res, next) => {
         doc.moveTo(40, doc.y).lineTo(550, doc.y).stroke("#cccccc");
         doc.y += 20;
 
-        /* ---------- PAGE BREAK SAFETY ---------- */
+        /* ---------- PAGE SAFETY ---------- */
         if (doc.y > 650) {
           doc.addPage();
           doc.y = START_Y;
@@ -761,7 +759,6 @@ const downloadReport = async (req, res, next) => {
       doc.end();
       return;
     }
-
 
     res.status(400).json({ message: "Invalid dataType" });
   } catch (error) {
