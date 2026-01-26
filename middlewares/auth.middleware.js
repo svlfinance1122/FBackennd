@@ -8,7 +8,12 @@ const authMiddleware = (req, res, next) => {
             return res.status(401).json({ success: false, message: "Authentication required" });
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || "manikanta");
+        if (!process.env.JWT_SECRET) {
+            console.error("JWT_SECRET is not defined in environment variables");
+            return res.status(500).json({ success: false, message: "Internal Server Configuration Error" });
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
         next();
     } catch (error) {

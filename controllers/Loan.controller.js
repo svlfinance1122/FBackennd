@@ -365,7 +365,6 @@ const toISO = (dateStr) => {
 const downloadReport = async (req, res, next) => {
   try {
     const { dataType, section, areas, day, fromDate, toDate } = req.body;
-    console.log(req.body)
     if (!dataType || !fromDate || !toDate) {
       return res.status(400).json({ message: "Missing required fields" });
     }
@@ -434,7 +433,6 @@ const downloadReport = async (req, res, next) => {
         where,
         order: [["sno", "ASC"]],
       });
-      console.log(users)
 
       let totalGiven = 0, totalPaid = 0, totalPending = 0, totalInterest = 0, totalFinal = 0;
 
@@ -804,9 +802,8 @@ const renewLoan = async (req, res, next) => {
 
     const finalTamount = finalGivenAmount + finalInterest;
 
-    // 3️⃣ Update LoanUser record
-    await loan.update({
-      ...otherData,
+    // 3️⃣ Update LoanUser record (RESTRICTED FIELDS)
+    const updateFields = {
       givenAmount: finalGivenAmount,
       section: finalSection,
       interestPercent: finalInterestPercent,
@@ -815,7 +812,14 @@ const renewLoan = async (req, res, next) => {
       givenDate: givenDate || loan.givenDate,
       lastDate: lastDate || loan.lastDate,
       paid: 0, // Always reset paid to 0
-    });
+    };
+
+    // Optional: Allow updating phone/address during renewal if provided
+    if (otherData.name) updateFields.name = otherData.name;
+    if (otherData.address) updateFields.address = otherData.address;
+    if (otherData.phoneNumber) updateFields.phoneNumber = otherData.phoneNumber;
+
+    await loan.update(updateFields);
 
     // 4️⃣ Delete all entries in LoanTable for this loan
     await LoanTable.destroy({

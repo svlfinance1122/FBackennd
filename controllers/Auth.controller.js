@@ -26,7 +26,7 @@ const loginUser = async (req, res, next) => {
 
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
-      process.env.JWT_SECRET || "your_secret_key",
+      process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
@@ -132,13 +132,12 @@ const updateUser = async (req, res, next) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Prepare update object
-    const updateData = {
-      name,
-      phoneNo,
-      role,
-      linesHandle,
-    };
+    // Prepare update object (RESTRICTED FIELDS)
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (phoneNo) updateData.phoneNo = phoneNo;
+    if (role) updateData.role = role;
+    if (linesHandle) updateData.linesHandle = linesHandle;
 
     // 🔹 Ensure only Admin can have/update PIN
     if (user.role && user.role.toLowerCase() === 'admin' && pin !== undefined) {
@@ -192,12 +191,12 @@ const addAreaToUser = async (req, res, next) => {
   try {
     let { areaName } = req.body;
 
-    // ✅ Simple validation
+    // ✅ Validation
     if (!areaName) {
       return res.status(400).json({ message: "Area Name is required" });
     }
 
-    // ✅ Trim spaces only
+    // ✅ Normalize area name (trim + lowercase)
     areaName = areaName.trim().toLowerCase();
 
     const usersAll = await Users.findAll({
@@ -209,16 +208,16 @@ const addAreaToUser = async (req, res, next) => {
     }
 
     for (const user of usersAll) {
+      // ✅ Ensure existing array & normalize it too
       const existingLinesHandle = Array.isArray(user.linesHandle)
-        ? user.linesHandle
+        ? user.linesHandle.map(a => a.toLowerCase())
         : [];
 
+      // ✅ Skip if already exists
       if (existingLinesHandle.includes(areaName)) continue;
 
-      const updatedLinesHandle = [
-        ...existingLinesHandle,
-        areaName
-      ];
+      // ✅ Add lowercase area
+      const updatedLinesHandle = [...existingLinesHandle, areaName];
 
       await user.update({ linesHandle: updatedLinesHandle });
     }
