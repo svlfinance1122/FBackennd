@@ -435,6 +435,7 @@ const downloadReport = async (req, res, next) => {
         order: [["sno", "ASC"]],
       });
       console.log(users)
+
       let totalGiven = 0, totalPaid = 0, totalPending = 0, totalInterest = 0, totalFinal = 0;
 
       users.forEach((u) => {
@@ -576,12 +577,29 @@ const downloadReport = async (req, res, next) => {
 
 
       const loanIds = [...new Set(collections.map((c) => c.loanId))];
-      const users = await LoanUser.findAll({
-        where: { loanId: { [Op.in]: loanIds } },
-      });
+      // const users = await LoanUser.findAll({
+      //   where: { loanId: { [Op.in]: loanIds }, section: section, area: area },
+      // },
+      // });
+      const where = {};
+      if (loanIds?.length) {
+        where.loanId = { [Op.in]: loanIds };
+      }
 
-      console.log(users)
-      console.log(collections)
+      if (section) where.section = section;
+      if (areas?.length) {
+        where.area = { [Op.in]: areas };
+      }
+      if (section === "Weekly" && day) {
+        where.day = day;
+      }
+
+
+      // ✅ final query
+      const users = await LoanUser.findAll({
+        where,
+        order: [["sno", "ASC"]],
+      });
       const userMap = {};
       users.forEach((u) => (userMap[u.loanId] = u));
 
@@ -654,33 +672,30 @@ const downloadReport = async (req, res, next) => {
       };
 
       /* -------------------- DOCUMENT HEADER -------------------- */
-      doc.font("Helvetica-Bold").fontSize(16)
+      doc.font("Helvetica-Bold")
+        .fontSize(16)
         .text("Full Customer Loan Report", { align: "center" });
 
-      doc.font("Helvetica").fontSize(10)
+      doc.font("Helvetica")
+        .fontSize(10)
         .text(headerText, { align: "center" });
 
       doc.moveDown(2);
 
       /* -------------------- FETCH USERS -------------------- */
-
       const where = {};
       if (section) where.section = section;
       if (areas?.length) where.area = { [Op.in]: areas };
       if (section === "Weekly" && day) where.day = day;
+
       if (fromDate && toDate) {
         const fromISO = toISO(fromDate);
         const toISODate = toISO(toDate);
 
-        if (fromISO === toISODate) {
-          where.givenDate = {
-            [Op.eq]: fromISO,
-          };
-        } else {
-          where.givenDate = {
-            [Op.between]: [fromISO, toISODate],
-          };
-        }
+        where.givenDate =
+          fromISO === toISODate
+            ? { [Op.eq]: fromISO }
+            : { [Op.between]: [fromISO, toISODate] };
       }
 
       const users = await LoanUser.findAll({
@@ -738,13 +753,32 @@ const downloadReport = async (req, res, next) => {
           y += ROW_HEIGHT;
         }
 
-        doc.y = y + 10;
+        /* ---------- ADDITIONAL INFO (FIXED HEIGHT) ---------- */
+        y += ROW_HEIGHT;
 
-        /* ---------- COLLECTIONS TABLE ---------- */
-        doc.font("Helvetica-Bold").fontSize(10)
+        y = checkPageBreak(y);
+        doc.font("Helvetica-Bold").text("Additional Info:", LEFT_X, y);
+        doc.font("Helvetica").text(
+          u.additionalInfo || "N/A",
+          LEFT_X + 90,
+          y,
+          {
+            width: 420,
+            height: ROW_HEIGHT * 2,
+            ellipsis: true,
+          }
+        );
+
+        y += ROW_HEIGHT * 3;
+        doc.y = y;
+
+        /* ---------- COLLECTIONS HISTORY ---------- */
+        doc.y += 20; // fixed gap
+        doc.font("Helvetica-Bold")
+          .fontSize(10)
           .text("Collections History", LEFT_X, doc.y);
 
-        doc.y += 10;
+        doc.y += 15;
         let tableY = drawCollectionsHeader(doc.y);
 
         const collections = await LoanTable.findAll({
@@ -778,7 +812,7 @@ const downloadReport = async (req, res, next) => {
         doc.moveTo(40, doc.y).lineTo(550, doc.y).stroke("#cccccc");
         doc.y += 20;
 
-        /* ---------- FINAL PAGE BREAK ---------- */
+        /* ---------- PAGE BREAK SAFETY ---------- */
         if (doc.y > 650) {
           doc.addPage();
           doc.y = START_Y;
