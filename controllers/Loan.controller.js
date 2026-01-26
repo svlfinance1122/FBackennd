@@ -459,7 +459,7 @@ const downloadReport = async (req, res, next) => {
           lastDate: formatDateDMY(u.lastDate),
          additionalInfo: u.additionalInfo,
           verifiedBy: u.verifiedBy,
-          verifiedNo: u.verifiedNo
+          verifiedNo: u.verifiedByNo
         });
       });
 
