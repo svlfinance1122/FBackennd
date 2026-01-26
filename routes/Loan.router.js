@@ -16,7 +16,7 @@ const {
 } = require('../controllers/Loan.controller');
 
 // Apply authMiddleware to all routes in this router
-LoanRouter.use(authMiddleware);
+// LoanRouter.use(authMiddleware);
 
 // POST /loan/create -> create a new loan
 LoanRouter.post('/loan/create', createLoan);

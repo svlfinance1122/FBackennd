@@ -399,6 +399,9 @@ const downloadReport = async (req, res, next) => {
         { header: "Total", key: "tamount", width: 15 },
         { header: "Given Date", key: "givenDate", width: 15 },
         { header: "Last Date", key: "lastDate", width: 15 },
+        { header: "Additonal Info", key: "additionalInfo", width: 15 },
+        { header: "VerifiedBy", key: "verifiedBy", width: 15 },
+        { header: "VerifiedNo", key: "verifiedNo", width: 15 },
       ];
 
       sheet.columns = columns;
@@ -454,6 +457,9 @@ const downloadReport = async (req, res, next) => {
           pending,
           givenDate: formatDateDMY(u.givenDate),
           lastDate: formatDateDMY(u.lastDate),
+         additionalInfo: u.additionalInfo,
+          verifiedBy: u.verifiedBy,
+          verifiedNo: u.verifiedNo
         });
       });
 
