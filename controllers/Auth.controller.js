@@ -131,7 +131,7 @@ const updateUser = async (req, res, next) => {
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-
+    console.log(pin);
     // Prepare update object (RESTRICTED FIELDS)
     const updateData = {};
     if (name) updateData.name = name;
@@ -140,12 +140,12 @@ const updateUser = async (req, res, next) => {
     if (linesHandle) updateData.linesHandle = linesHandle;
 
     // 🔹 Ensure only Admin can have/update PIN
-    if (user.role && user.role.toLowerCase() === 'admin' && pin !== undefined) {
-      updateData.pin = pin;
-    } else if (pin !== undefined) {
-      // If a non-admin is being updated and a pin is provided, explicitly set it to null or ignore it
-      updateData.pin = null;
-    }
+    // if (user.role && user.role.toLowerCase() === 'admin' && pin !== undefined) {
+    //   updateData.pin = pin;
+    // } else if (pin !== undefined) {
+    //   // If a non-admin is being updated and a pin is provided, explicitly set it to null or ignore it
+    //   updateData.pin = null;
+    // }
 
     // Update password only if provided
     if (password) {
