@@ -2,13 +2,25 @@ const BkpModel = require('../models/Bkp.model');
 
 const saveBkp = async (req, res, next) => {
   try {
-    const { sNo, name, amount, area } = req.body;
+    const { id, sNo, name, amount, area } = req.body;
 
     if (sNo === undefined || !name || amount === undefined || !area) {
       return res.status(400).json({
         success: false,
         message: 'sNo, name, amount, area are required',
       });
+    }
+
+    if (id) {
+      const record = await BkpModel.findByPk(id);
+      if (record) {
+        await record.update({ sNo, name, amount, area });
+        return res.status(200).json({
+          success: true,
+          message: 'BKP entry updated successfully',
+          data: record,
+        });
+      }
     }
 
     const entry = await BkpModel.create({ sNo, name, amount, area });
@@ -56,6 +68,30 @@ const getAllBkp = async (req, res, next) => {
   }
 };
 
-module.exports = { saveBkp, deleteBkp, getAllBkp };
+const editBkp = async (req, res, next) => {
+  try {
+    const { id, sNo, name, amount, area } = req.body;
 
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'id is required' });
+    }
 
+    const record = await BkpModel.findByPk(id);
+
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'BKP entry not found' });
+    }
+
+    await record.update({ sNo, name, amount, area });
+
+    return res.status(200).json({
+      success: true,
+      message: 'BKP entry updated successfully',
+      data: record,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { saveBkp, deleteBkp, getAllBkp, editBkp };

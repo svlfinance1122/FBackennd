@@ -133,6 +133,11 @@ const LoanUser = sequelize.define(
       allowNull: true,
       defaultValue: null,
     },
+    marked: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
   },
   {
     tableName: "loan_user",

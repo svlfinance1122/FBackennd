@@ -231,6 +231,102 @@ const addAreaToUser = async (req, res, next) => {
   }
 };
 
+const editArea = async (req, res, next) => {
+  try {
+    let { oldAreaName, newAreaName } = req.body;
+
+    if (!oldAreaName || !newAreaName) {
+      return res.status(400).json({ message: "oldAreaName and newAreaName are required" });
+    }
+
+    oldAreaName = oldAreaName.trim().toLowerCase();
+    newAreaName = newAreaName.trim().toLowerCase();
+
+    const allUsers = await Users.findAll();
+
+    for (const user of allUsers) {
+      if (user.linesHandle && Array.isArray(user.linesHandle)) {
+        const lowerLinesHandle = user.linesHandle.map(a => typeof a === 'string' ? a.toLowerCase() : String(a).toLowerCase());
+        const areaIndex = lowerLinesHandle.indexOf(oldAreaName);
+        if (areaIndex !== -1) {
+          lowerLinesHandle[areaIndex] = newAreaName;
+          const updatedLinesHandle = [...new Set(lowerLinesHandle)];
+          await user.update({ linesHandle: updatedLinesHandle });
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Area '${oldAreaName}' updated to '${newAreaName}' successfully`
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deleteArea = async (req, res, next) => {
+  try {
+    let { areaName } = req.query;
+    if (!areaName) {
+      areaName = req.body.areaName;
+    }
+
+    if (!areaName) {
+      return res.status(400).json({ message: "areaName is required" });
+    }
+
+    areaName = areaName.trim().toLowerCase();
+
+    const allUsers = await Users.findAll();
+
+    for (const user of allUsers) {
+      if (user.linesHandle && Array.isArray(user.linesHandle)) {
+        const lowerLinesHandle = user.linesHandle.map(a => typeof a === 'string' ? a.toLowerCase() : String(a).toLowerCase());
+        const filteredLinesHandle = lowerLinesHandle.filter(a => a !== areaName);
+        
+        if (lowerLinesHandle.length !== filteredLinesHandle.length) {
+          await user.update({ linesHandle: filteredLinesHandle });
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Area '${areaName}' deleted successfully`
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getAllAreas = async (req, res, next) => {
+  try {
+    const allUsers = await Users.findAll();
+    const allAreas = new Set();
+
+    allUsers.forEach(user => {
+      if (user.linesHandle && Array.isArray(user.linesHandle)) {
+        user.linesHandle.forEach(area => {
+           if (area) {
+             allAreas.add(typeof area === 'string' ? area.toLowerCase() : String(area).toLowerCase());
+           }
+        });
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: Array.from(allAreas)
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
 const updatePasswordByUsername = async (req, res, next) => {
   try {
     const { username, newPassword, pin } = req.body;
@@ -351,7 +447,6 @@ const validatePin = async (req, res, next) => {
       });
     }
 
-    // 🔹 Success
     res.status(200).json({
       success: true,
       message: "Verification successful",
@@ -361,7 +456,6 @@ const validatePin = async (req, res, next) => {
   }
 };
 
-
 module.exports = {
   loginUser,
   registerUser,
@@ -370,6 +464,9 @@ module.exports = {
   updateUser,
   deleteUser,
   addAreaToUser,
+  editArea,
+  deleteArea,
+  getAllAreas,
   updatePasswordByUsername,
   validatePin,
   updatePin,

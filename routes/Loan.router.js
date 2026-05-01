@@ -12,7 +12,8 @@ const {
     updateTableEntry,
     getLoanSummary,
     downloadReport,
-    renewLoan
+    renewLoan,
+    toggleMark
 } = require('../controllers/Loan.controller');
 
 // Apply authMiddleware to all routes in this router
@@ -47,5 +48,8 @@ LoanRouter.put('/table/update', updateTableEntry);
 
 // GET /table/loan -> Get tables by loanId (Query Param)
 LoanRouter.get('/table/loan', getTablesByLoanId);
+
+// POST /toggle-mark -> Toggle marked status of a loan
+LoanRouter.post('/toggle-mark', toggleMark);
 
 module.exports = LoanRouter;

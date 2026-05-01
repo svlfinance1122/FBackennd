@@ -2,13 +2,25 @@ const CfModel = require('../models/Cf.model');
 
 const saveCf = async (req, res, next) => {
   try {
-    const { sNo, date, amount } = req.body;
+    const { id, sNo, date, amount } = req.body;
 
     if (sNo === undefined || !date || date === "Invalid date" || amount === undefined) {
       return res.status(400).json({
         success: false,
         message: 'A valid date, sNo and amount are required',
       });
+    }
+
+    if (id) {
+      const record = await CfModel.findByPk(id);
+      if (record) {
+        await record.update({ sNo, date, amount });
+        return res.status(200).json({
+          success: true,
+          message: 'CF entry updated successfully',
+          data: record,
+        });
+      }
     }
 
     const entry = await CfModel.create({ sNo, date, amount });
@@ -48,4 +60,52 @@ const getAllCf = async (req, res, next) => {
   }
 };
 
-module.exports = { saveCf, clearCf, getAllCf };
+const deleteCf = async (req, res, next) => {
+  try {
+    const { id } = req.query;
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'id is required' });
+    }
+
+    const record = await CfModel.findByPk(id);
+
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'CF entry not found' });
+    }
+
+    await record.destroy();
+
+    return res.status(200).json({ success: true, message: 'CF entry deleted' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const editCf = async (req, res, next) => {
+  try {
+    const { id, sNo, date, amount } = req.body;
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'id is required' });
+    }
+
+    const record = await CfModel.findByPk(id);
+
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'CF entry not found' });
+    }
+
+    await record.update({ sNo, date, amount });
+
+    return res.status(200).json({
+      success: true,
+      message: 'CF entry updated successfully',
+      data: record,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { saveCf, clearCf, getAllCf, deleteCf, editCf };

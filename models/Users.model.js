@@ -37,7 +37,7 @@ const Users = sequelize.define("Users", {
   pin: {
     type: DataTypes.STRING(10),
     allowNull: true
-  }
+  },
 }, {
   tableName: "users",
   timestamps: true
