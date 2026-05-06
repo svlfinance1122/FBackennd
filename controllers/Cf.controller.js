@@ -1,34 +1,38 @@
 const CfModel = require('../models/Cf.model');
 
+// Supports single object or array
 const saveCf = async (req, res, next) => {
   try {
-    const { id, sNo, date, amount } = req.body;
+    const items = Array.isArray(req.body) ? req.body : [req.body];
+    const results = [];
+    const errors = [];
 
-    if (sNo === undefined || !date || date === "Invalid date" || amount === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: 'A valid date, sNo and amount are required',
-      });
-    }
+    for (const item of items) {
+      const { id, sNo, date, amount } = item;
 
-    if (id) {
-      const record = await CfModel.findByPk(id);
-      if (record) {
-        await record.update({ sNo, date, amount });
-        return res.status(200).json({
-          success: true,
-          message: 'CF entry updated successfully',
-          data: record,
-        });
+      if (sNo === undefined || !date || date === "Invalid date" || amount === undefined) {
+        errors.push({ sNo, date, message: 'A valid date, sNo and amount are required' });
+        continue;
       }
-    }
 
-    const entry = await CfModel.create({ sNo, date, amount });
+      if (id) {
+        const record = await CfModel.findByPk(id);
+        if (record) {
+          await record.update({ sNo, date, amount });
+          results.push({ action: 'updated', data: record });
+          continue;
+        }
+      }
+
+      const entry = await CfModel.create({ sNo, date, amount });
+      results.push({ action: 'created', data: entry });
+    }
 
     return res.status(201).json({
       success: true,
-      message: 'CF entry saved successfully',
-      data: entry,
+      message: `${results.length} CF entry(ies) processed successfully`,
+      data: results.length === 1 ? results[0] : results,
+      ...(errors.length > 0 && { errors }),
     });
   } catch (err) {
     next(err);

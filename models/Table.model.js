@@ -15,7 +15,7 @@ const LoanTable = sequelize.define(
     },
 
     date: {
-      type: DataTypes.STRING(10), // Store as dd-mm-yyyy
+      type: DataTypes.DATEONLY,
       allowNull: false,
     },
   },

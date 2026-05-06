@@ -1,34 +1,38 @@
 const BkpModel = require('../models/Bkp.model');
 
+// Supports single object or array
 const saveBkp = async (req, res, next) => {
   try {
-    const { id, sNo, name, amount, area } = req.body;
+    const items = Array.isArray(req.body) ? req.body : [req.body];
+    const results = [];
+    const errors = [];
 
-    if (sNo === undefined || !name || amount === undefined || !area) {
-      return res.status(400).json({
-        success: false,
-        message: 'sNo, name, amount, area are required',
-      });
-    }
+    for (const item of items) {
+      const { id, sNo, name, amount, area } = item;
 
-    if (id) {
-      const record = await BkpModel.findByPk(id);
-      if (record) {
-        await record.update({ sNo, name, amount, area });
-        return res.status(200).json({
-          success: true,
-          message: 'BKP entry updated successfully',
-          data: record,
-        });
+      if (sNo === undefined || !name || amount === undefined || !area) {
+        errors.push({ sNo, name, message: 'sNo, name, amount, area are required' });
+        continue;
       }
-    }
 
-    const entry = await BkpModel.create({ sNo, name, amount, area });
+      if (id) {
+        const record = await BkpModel.findByPk(id);
+        if (record) {
+          await record.update({ sNo, name, amount, area });
+          results.push({ action: 'updated', data: record });
+          continue;
+        }
+      }
+
+      const entry = await BkpModel.create({ sNo, name, amount, area });
+      results.push({ action: 'created', data: entry });
+    }
 
     return res.status(201).json({
       success: true,
-      message: 'BKP entry saved successfully',
-      data: entry,
+      message: `${results.length} BKP entry(ies) processed successfully`,
+      data: results.length === 1 ? results[0] : results,
+      ...(errors.length > 0 && { errors }),
     });
   } catch (err) {
     next(err);

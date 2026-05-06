@@ -107,12 +107,12 @@ const LoanUser = sequelize.define(
     },
 
     givenDate: {
-      type: DataTypes.STRING(50),
+      type: DataTypes.DATEONLY,
       allowNull: false,
     },
 
     lastDate: {
-      type: DataTypes.STRING(50),
+      type: DataTypes.DATEONLY,
       allowNull: false,
     },
 

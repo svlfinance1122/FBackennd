@@ -22,29 +22,39 @@ const getAllLoans = async (req, res, next) => {
   }
 };
 
-// 🔹 Create New Loan
+// 🔹 Create New Loan (supports single object or array)
 const createLoan = async (req, res, next) => {
   try {
-    const loanData = req.body;
-    // Check for existing loan with same sNo and section
-    const existingLoan = await LoanUser.findOne({
-      where: {
-        sno: loanData.sno,
-        section: loanData.section,
-      },
-    });
-    if (existingLoan) {
-      return res.status(400).json({
-        success: false,
-        message: `Loan with sNo ${loanData.sno} and section ${loanData.section} already exists.`,
+    const items = Array.isArray(req.body) ? req.body : [req.body];
+    const created = [];
+    const errors = [];
+
+    for (const loanData of items) {
+      // Check for existing loan with same sNo and section
+      const existingLoan = await LoanUser.findOne({
+        where: {
+          sno: loanData.sno,
+          section: loanData.section,
+        },
       });
+      if (existingLoan) {
+        errors.push({
+          sno: loanData.sno,
+          section: loanData.section,
+          message: `Loan with sNo ${loanData.sno} and section ${loanData.section} already exists.`,
+        });
+        continue;
+      }
+
+      const newLoan = await LoanUser.create(loanData);
+      created.push(newLoan);
     }
 
-    const newLoan = await LoanUser.create(loanData);
     res.status(201).json({
       success: true,
-      message: "Loan created successfully",
-      data: newLoan,
+      message: `${created.length} loan(s) created successfully`,
+      data: created.length === 1 ? created[0] : created,
+      ...(errors.length > 0 && { errors }),
     });
   } catch (error) {
     next(error);
@@ -190,59 +200,57 @@ const updateLoanById = async (req, res, next) => {
   }
 };
 
-// 🔹 Table CRUD Operations
+// 🔹 Table CRUD Operations (supports single object or array)
 const saveTable = async (req, res, next) => {
   try {
-    const { loanId, date, amount } = req.body;
+    const items = Array.isArray(req.body) ? req.body : [req.body];
+    const created = [];
+    const errors = [];
 
-    if (!loanId || !date || !amount) {
-      return res.status(400).json({
-        success: false,
-        message: "loanId, date, and amount are required",
+    for (const item of items) {
+      const { loanId, date, amount } = item;
+
+      if (!loanId || !date || !amount) {
+        errors.push({ loanId, date, message: "loanId, date, and amount are required" });
+        continue;
+      }
+
+      // 1️⃣ Check loan exists
+      const loan = await LoanUser.findOne({ where: { loanId } });
+      if (!loan) {
+        errors.push({ loanId, message: "Loan not found" });
+        continue;
+      }
+
+      // 2️⃣ Check SAME loanId + date already exists
+      const existingEntry = await LoanTable.findOne({
+        where: { loanId, date },
       });
-    }
 
-    // 1️⃣ Check loan exists
-    const loan = await LoanUser.findOne({ where: { loanId } });
-    if (!loan) {
-      return res.status(404).json({
-        success: false,
-        message: "Loan not found",
-      });
-    }
+      if (existingEntry) {
+        errors.push({ loanId, date, message: "Entry for this date already exists for this loan" });
+        continue;
+      }
 
-    // 2️⃣ Check SAME loanId + date already exists
-    const existingEntry = await LoanTable.findOne({
-      where: {
+      // 3️⃣ Create new table entry
+      const newEntry = await LoanTable.create({
         loanId,
         date,
-      },
-    });
-
-    if (existingEntry) {
-      return res.status(409).json({
-        success: false,
-        message: "Entry for this date already exists for this loan",
+        amount: Number(amount),
       });
+
+      // 4️⃣ Update paid amount
+      const newPaid = (Number(loan.paid) || 0) + Number(amount);
+      await loan.update({ paid: newPaid });
+
+      created.push({ entry: newEntry, updatedPaid: newPaid });
     }
-
-    // 3️⃣ Create new table entry
-    const newEntry = await LoanTable.create({
-      loanId,
-      date,
-      amount: Number(amount),
-    });
-
-    // 4️⃣ Update paid amount
-    const newPaid = (Number(loan.paid) || 0) + Number(amount);
-
-    await loan.update({ paid: newPaid });
 
     res.status(201).json({
       success: true,
-      message: "Entry created successfully",
-      data: newEntry,
-      updatedPaid: newPaid,
+      message: `${created.length} entry(ies) created successfully`,
+      data: created.length === 1 ? created[0] : created,
+      ...(errors.length > 0 && { errors }),
     });
   } catch (error) {
     next(error);
@@ -339,305 +347,493 @@ const getLoanSummary = async (req, res, next) => {
   }
 };
 
-const formatDateDMY = (dateStr) => {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) {
-    // If it's already dd-mm-yyyy string, returning it is tricky if we don't know the format.
-    // But since the user wants dd-mm-yyyy, we'll try to ensure it.
-    if (typeof dateStr === "string" && /^\d{2}-\d{2}-\d{4}$/.test(dateStr)) return dateStr;
-    return dateStr;
-  }
-  return `${String(d.getDate()).padStart(2, "0")}-${String(
-    d.getMonth() + 1
-  ).padStart(2, "0")}-${d.getFullYear()}`;
-};
-
-/* ======================================================
-   CONTROLLER
-====================================================== */
-
-const toISO = (dateStr) => {
-  const [dd, mm, yyyy] = dateStr.split("-");
-  return `${yyyy}-${mm}-${dd}`;
-};
 
 
-const downloadReport = async (req, res, next) => {
+
+const downloadReport = async (req, res) => {
   try {
     const { dataType, section, areas, day, fromDate, toDate } = req.body;
 
-    if (!dataType || !fromDate || !toDate) {
-      return res.status(400).json({ message: "Missing required fields" });
-    }
+    if (dataType === "Collection") {
 
-    const headerText = `Report: ${dataType} | Section: ${section || "All"
-      } | Area: ${areas?.join(", ") || "All"} | Day: ${day || "All"
-      } | From: ${fromDate} | To: ${toDate}`;
+      /* ================= DATE FORMAT ================= */
+      const formatDate = (date) => {
+        const [dd, mm, yyyy] = date.split("-");
+        return `${yyyy}-${mm}-${dd}`;
+      };
 
-    /* ======================================================
-       🔥 COMMON FILTER BUILDER (FIXED)
-    ====================================================== */
-    const buildWhere = () => {
-      const where = {};
+      const formatToDisplay = (date) => {
+        const d = new Date(date);
+        const dd = String(d.getDate()).padStart(2, "0");
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const yyyy = d.getFullYear();
+        return `${dd}-${mm}-${yyyy}`;
+      };
 
-      const isAllSection = section === "All";
-      const isAllArea = areas?.includes("All Areas");
-      const isAllDay = day === "All Days";
+      const from = formatDate(fromDate);
+      const to = formatDate(toDate);
 
-      // ✅ SECTION
-      if (section && !isAllSection) {
-        where.section = section;
+      /* ================= FETCH USERS ================= */
+      const userWhere = {};
+
+      if (section && section !== "All") {
+        userWhere.section = section;
       }
-
-      // ✅ AREA
-      if (areas?.length && !isAllArea) {
-        where.area = { [Op.in]: areas };
+      if (day && day !== "All") {
+        userWhere.day = day;
       }
-
-      // ✅ DAY
-      if (section === "Weekly" && day && !isAllDay) {
-        where.day = day;
+      if (areas && areas.length && areas[0] !== "All Areas") {
+        userWhere.area = {
+          [Op.in]: areas
+        };
       }
-
-      // ✅ DATE
-      if (fromDate && toDate) {
-        const fromISO = toISO(fromDate);
-        const toISODate = toISO(toDate);
-
-        where.givenDate =
-          fromISO === toISODate
-            ? { [Op.eq]: fromISO }
-            : { [Op.between]: [fromISO, toISODate] };
-      }
-
-      return where;
-    };
-
-    /* ======================================================
-       1️⃣ CUSTOMER DATA → EXCEL
-    ====================================================== */
-    if (dataType === "Customer Data") {
-      const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet("Customers");
-
-      const columns = [
-        { header: "S.No", key: "sno", width: 8 },
-        { header: "Loan ID", key: "loanId", width: 25 },
-        { header: "Section", key: "section", width: 12 },
-        { header: "Area", key: "area", width: 12 },
-        { header: "Day", key: "day", width: 12 },
-        { header: "Name", key: "name", width: 20 },
-        { header: "Address", key: "address", width: 25 },
-        { header: "Phone", key: "phoneNumber", width: 15 },
-        { header: "Alt Phone", key: "alternativeNumber", width: 15 },
-        { header: "Work", key: "work", width: 15 },
-        { header: "H/O / W/O", key: "houseWifeOrSonOf", width: 18 },
-        { header: "Given Amount", key: "givenAmount", width: 15 },
-        { header: "Paid", key: "paid", width: 12 },
-        { header: "Pending", key: "pending", width: 12 },
-        { header: "Interest", key: "interest", width: 12 },
-        { header: "Total", key: "tamount", width: 15 },
-        { header: "Given Date", key: "givenDate", width: 15 },
-        { header: "Last Date", key: "lastDate", width: 15 },
-        { header: "Additional Info", key: "additionalInfo", width: 20 },
-        { header: "Verified By", key: "verifiedBy", width: 15 },
-        { header: "Verified No", key: "verifiedNo", width: 15 },
-      ];
-
-      sheet.columns = columns;
-
-      // ✅ HEADER TEXT
-      sheet.insertRow(1, [headerText]);
-      sheet.mergeCells(1, 1, 1, columns.length);
-      sheet.getRow(1).font = { bold: true };
-
-      // ✅ COLUMN HEADERS (IMPORTANT FIX)
-      sheet.addRow(columns.map((c) => c.header));
-      sheet.getRow(2).font = { bold: true };
-
-      const where = buildWhere();
 
       const users = await LoanUser.findAll({
-        where,
+        where: userWhere,
+        attributes: ["loanId", "sno", "name", "day", "section", "area"],
         order: [["sno", "ASC"]],
+        raw: true,
       });
 
-      let totalGiven = 0,
-        totalPaid = 0,
-        totalPending = 0,
-        totalInterest = 0,
-        totalFinal = 0;
-
-      users.forEach((u) => {
-        const principal = Number(u.givenAmount || 0);
-        const paid = Number(u.paid || 0);
-        const interest = Number(u.interest || 0);
-        const total = Number(u.tamount || 0);
-        const pending = total - paid;
-
-        totalGiven += principal;
-        totalPaid += paid;
-        totalPending += pending;
-        totalInterest += interest;
-        totalFinal += total;
-
-        sheet.addRow({
-          ...u.toJSON(),
-          pending,
-          givenDate: formatDateDMY(u.givenDate),
-          lastDate: formatDateDMY(u.lastDate),
-          verifiedNo: u.verifiedByNo,
-        });
-      });
-
-      sheet.addRow({});
-      const totalRow = sheet.addRow({
-        houseWifeOrSonOf: "TOTAL",
-        givenAmount: totalGiven,
-        paid: totalPaid,
-        pending: totalPending,
-        interest: totalInterest,
-        tamount: totalFinal,
-      });
-      totalRow.font = { bold: true };
-
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename=customers_${Date.now()}.xlsx`
-      );
-
-      await workbook.xlsx.write(res);
-      return res.end();
-    }
-
-    /* ======================================================
-       2️⃣ COLLECTION → EXCEL
-    ====================================================== */
-    if (dataType === "Collection") {
-      const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet("Collections");
-
-      const columns = [
-        { header: "S.No", key: "sno", width: 8 },
-        { header: "Name", key: "name", width: 20 },
-        { header: "Date", key: "date", width: 15 },
-        { header: "Amount", key: "amount", width: 15 },
-      ];
-
-      sheet.columns = columns;
-
-      sheet.insertRow(1, [headerText]);
-      sheet.mergeCells(1, 1, 1, columns.length);
-      sheet.getRow(1).font = { bold: true };
-
-      sheet.addRow(columns.map((c) => c.header));
-      sheet.getRow(2).font = { bold: true };
-
-      const fromISO = toISO(fromDate);
-      const toISODate = toISO(toDate);
-
-      const dateCondition =
-        fromISO === toISODate
-          ? { [Op.eq]: fromISO }
-          : { [Op.between]: [fromISO, toISODate] };
-
-      const collections = await LoanTable.findAll({
-        where: { date: dateCondition },
-        order: [["date", "ASC"]],
-      });
-
-      const loanIds = [...new Set(collections.map((c) => c.loanId))];
-
-      const where = buildWhere();
-      if (loanIds.length) {
-        where.loanId = { [Op.in]: loanIds };
+      if (!users.length) {
+        return res.status(404).json({
+          success: false,
+          message: "No users found",
+        })
       }
 
-      const users = await LoanUser.findAll({ where });
-
+      /* ================= CREATE USER MAP ================= */
       const userMap = {};
-      users.forEach((u) => (userMap[u.loanId] = u));
+      users.forEach((u) => {
+        userMap[u.loanId] = u;
+      });
 
-      let totalCollection = 0;
+      const loanIds = Object.keys(userMap);
 
-      collections.forEach((c) => {
-        const user = userMap[c.loanId];
+      /* ================= FETCH COLLECTIONS ================= */
+      const collections = await LoanTable.findAll({
+        where: {
+          loanId: { [Op.in]: loanIds },
+          date: {
+            [Op.between]: [from, to],
+          },
+        },
+        order: [["date", "ASC"]],
+        raw: true,
+      });
+
+      /* ================= EXCEL SETUP ================= */
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Collection Report");
+
+      sheet.columns = [
+        { header: "S.No", key: "sno", width: 10 },
+        { header: "Name", key: "name", width: 25 },
+        { header: "Amount", key: "amount", width: 15 },
+        { header: "Date", key: "date", width: 15 },
+        { header: "Section", key: "section", width: 15 },
+        { header: "Day", key: "day", width: 15 },
+        { header: "Area", key: "area", width: 15 },
+      ];
+
+      sheet.getRow(1).font = { bold: true };
+
+      /* ================= ADD DATA ================= */
+      let total = 0;
+
+      collections.forEach((item) => {
+        const user = userMap[item.loanId];
         if (!user) return;
 
-        const amt = Number(c.amount || 0);
-        totalCollection += amt;
+        const amt = Number(item.amount || 0);
+        total += amt;
 
         sheet.addRow({
           sno: user.sno,
           name: user.name,
-          date: formatDateDMY(c.date),
           amount: amt,
+          date: formatToDisplay(item.date),
+          section: user.section,   // ✅ add this
+          day: user.day,           // ✅ add this
+          area: user.area,
         });
       });
 
+      /* ================= TOTAL ROW ================= */
       const totalRow = sheet.addRow({
-        date: "TOTAL",
-        amount: totalCollection,
+        name: "TOTAL",
+        amount: total,
       });
+
       totalRow.font = { bold: true };
+
+      /* ================= DOWNLOAD ================= */
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
 
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename=collections_${Date.now()}.xlsx`
+        `attachment; filename=collection_report_${Date.now()}.xlsx`
+      );
+
+      await workbook.xlsx.write(res);
+      res.end();
+    }
+    if (dataType === "Customer Data") {
+
+      /* ================= DATE FORMAT ================= */
+      const formatDate = (date) => {
+        const [dd, mm, yyyy] = date.split("-");
+        return `${yyyy}-${mm}-${dd}`;
+      };
+
+      const formatToDisplay = (date) => {
+        const d = new Date(date);
+        const dd = String(d.getDate()).padStart(2, "0");
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const yyyy = d.getFullYear();
+        return `${dd}-${mm}-${yyyy}`;
+      };
+
+      const from = formatDate(fromDate);
+      const to = formatDate(toDate);
+
+      /* ================= FILTER ================= */
+      const userWhere = {
+        givenDate: {
+          [Op.between]: [from, to],
+        },
+      };
+
+      if (section && section !== "All") {
+        userWhere.section = section;
+      }
+
+      if (day && day !== "All") {
+        userWhere.day = day;
+      }
+
+      if (areas && areas.length && areas[0] !== "All Areas") {
+        userWhere.area = {
+          [Op.in]: areas,
+        };
+      }
+
+      /* ================= FETCH USERS ================= */
+      const users = await LoanUser.findAll({
+        where: userWhere,
+        order: [["sno", "ASC"]],
+        raw: true,
+      });
+
+      if (!users.length) {
+        return res.status(404).json({
+          success: false,
+          message: "No customer data found",
+        });
+      }
+
+      /* ================= EXCEL ================= */
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Customer Data");
+
+      sheet.columns = [
+        { header: "Loan ID", key: "loanId", width: 40 },
+        { header: "S.No", key: "sno", width: 8 },
+        { header: "Name", key: "name", width: 20 },
+        { header: "Phone", key: "phoneNumber", width: 15 },
+        { header: "Alt Number", key: "alternativeNumber", width: 15 },
+        { header: "Address", key: "address", width: 25 },
+        { header: "Work", key: "work", width: 20 },
+        { header: "House Wife / Son Of", key: "houseWifeOrSonOf", width: 20 },
+        { header: "Refer Name", key: "referName", width: 20 },
+        { header: "Refer Number", key: "referNumber", width: 15 },
+        { header: "Section", key: "section", width: 12 },
+        { header: "Area", key: "area", width: 15 },
+        { header: "Day", key: "day", width: 12 },
+        { header: "Given Amount", key: "givenAmount", width: 15 },
+        { header: "Paid", key: "paid", width: 12 },
+        { header: "Interest %", key: "interestPercent", width: 12 },
+        { header: "Interest", key: "interest", width: 12 },
+        { header: "Total Amount", key: "tamount", width: 15 },
+        { header: "Given Date", key: "givenDate", width: 15 },
+        { header: "Last Date", key: "lastDate", width: 15 },
+        { header: "Additional Info", key: "additionalInfo", width: 25 },
+        { header: "Verified By", key: "verifiedBy", width: 20 },
+        { header: "Verified By No", key: "verifiedByNo", width: 20 },
+        { header: "Created At", key: "createdAt", width: 20 },
+        { header: "Updated At", key: "updatedAt", width: 20 },
+      ];
+      sheet.getRow(1).font = { bold: true };
+
+      /* ================= ADD DATA ================= */
+      let totalGiven = 0;
+      let totalPaid = 0;
+      let totalAmount = 0;
+
+      users.forEach((u) => {
+        totalGiven += Number(u.givenAmount || 0);
+        totalPaid += Number(u.paid || 0);
+        totalAmount += Number(u.tamount || 0);
+
+        sheet.addRow({
+          ...u,
+          givenDate: formatToDisplay(u.givenDate),
+          lastDate: formatToDisplay(u.lastDate),
+          createdAt: u.createdAt ? formatToDisplay(u.createdAt) : "",
+          updatedAt: u.updatedAt ? formatToDisplay(u.updatedAt) : "",
+        });
+      });
+
+      /* ================= TOTAL ROW ================= */
+      const totalRow = sheet.addRow({
+        name: "TOTAL",
+        givenAmount: totalGiven,
+        paid: totalPaid,
+        tamount: totalAmount,
+      });
+
+      totalRow.font = { bold: true };
+
+      /* ================= DOWNLOAD ================= */
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=customer_data_${Date.now()}.xlsx`
       );
 
       await workbook.xlsx.write(res);
       return res.end();
     }
-
-    /* ======================================================
-       3️⃣ FULL DATA → PDF (unchanged except filter)
-    ====================================================== */
     if (dataType === "Full Data") {
-      const PDFDocument = require("pdfkit");
-      const doc = new PDFDocument({ margin: 40 });
 
-      res.setHeader("Content-Type", "application/pdf");
+      /* ================= DATE FORMAT ================= */
+      const formatDate = (date) => {
+        const [dd, mm, yyyy] = date.split("-");
+        return `${yyyy}-${mm}-${dd}`;
+      };
+
+      const formatToDisplay = (date) => {
+        const d = new Date(date);
+        const dd = String(d.getDate()).padStart(2, "0");
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const yyyy = d.getFullYear();
+        return `${dd}-${mm}-${yyyy}`;
+      };
+
+      const from = formatDate(fromDate);
+      const to = formatDate(toDate);
+
+      /* ================= FILTER USERS ================= */
+      const userWhere = {
+        givenDate: {
+          [Op.between]: [from, to],
+        },
+      };
+
+      if (section && section !== "All") {
+        userWhere.section = section;
+      }
+
+      if (day && day !== "All") {
+        userWhere.day = day;
+      }
+
+      if (areas && areas.length && areas[0] !== "All Areas") {
+        userWhere.area = {
+          [Op.in]: areas,
+        };
+      }
+
+      /* ================= FETCH USERS ================= */
+      const users = await LoanUser.findAll({
+        where: userWhere,
+        order: [["sno", "ASC"]],
+        raw: true,
+      });
+
+      if (!users.length) {
+        return res.status(404).json({
+          success: false,
+          message: "No data found",
+        });
+      }
+      const loanIds = users.map((u) => u.loanId);
+
+      /* ================= FETCH COLLECTIONS ================= */
+      const collections = await LoanTable.findAll({
+        where: {
+          loanId: { [Op.in]: loanIds },
+          date: {
+            [Op.between]: [from, to],
+          },
+        },
+        order: [["date", "ASC"]],
+        raw: true,
+      });
+
+      /* ================= GROUP COLLECTIONS ================= */
+      const collectionMap = {};
+      collections.forEach((c) => {
+        if (!collectionMap[c.loanId]) {
+          collectionMap[c.loanId] = [];
+        }
+        collectionMap[c.loanId].push(c);
+      });
+
+      /* ================= EXCEL ================= */
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Full Data");
+
+      /* ================= LOOP USERS ================= */
+      users.forEach((user) => {
+
+        /* ===== USER HEADER ===== */
+        const userHeader = sheet.addRow([
+          "Loan ID",
+          "S.No",
+          "Name",
+          "Phone",
+          "Alt Number",
+          "Address",
+          "Work",
+          "House Wife / Son Of",
+          "Refer Name",
+          "Refer Number",
+          "Section",
+          "Area",
+          "Day",
+          "Given Amount",
+          "Paid",
+          "Interest %",
+          "Interest",
+          "Total Amount",
+          "Given Date",
+          "Last Date",
+          "Additional Info",
+          "Verified By",
+          "Verified By No",
+          "Created At",
+          "Updated At"
+        ]);
+        sheet.getColumn(1).width = 38; // Loan ID
+        sheet.getColumn(2).width = 8;  // S.No
+        sheet.getColumn(3).width = 20; // Name
+        sheet.getColumn(4).width = 15; // Phone
+        sheet.getColumn(5).width = 15; // Alt Number
+        sheet.getColumn(6).width = 25; // Address
+        sheet.getColumn(7).width = 18; // Work
+        sheet.getColumn(8).width = 22; // House Wife / Son Of
+        sheet.getColumn(9).width = 18; // Refer Name
+        sheet.getColumn(10).width = 15; // Refer Number
+        sheet.getColumn(11).width = 12; // Section
+        sheet.getColumn(12).width = 15; // Area
+        sheet.getColumn(13).width = 12; // Day
+        sheet.getColumn(14).width = 15; // Given Amount
+        sheet.getColumn(15).width = 10; // Paid
+        sheet.getColumn(16).width = 12; // Interest %
+        sheet.getColumn(17).width = 12; // Interest
+        sheet.getColumn(18).width = 15; // Total Amount
+        sheet.getColumn(19).width = 15; // Given Date
+        sheet.getColumn(20).width = 15; // Last Date
+        sheet.getColumn(21).width = 25; // Additional Info
+        sheet.getColumn(22).width = 18; // Verified By
+        sheet.getColumn(23).width = 18; // Verified By No
+        sheet.getColumn(24).width = 20; // Created At
+        sheet.getColumn(25).width = 20; // Updated At
+
+        userHeader.font = { bold: true };
+
+        /* ===== USER DATA ===== */
+        sheet.addRow([
+          user.loanId,
+          user.sno,
+          user.name,
+          user.phoneNumber,
+          user.alternativeNumber,
+          user.address,
+          user.work,
+          user.houseWifeOrSonOf,
+          user.referName,
+          user.referNumber,
+          user.section,
+          user.area,
+          user.day,
+          user.givenAmount,
+          user.paid,
+          user.interestPercent,
+          user.interest,
+          user.tamount,
+          formatToDisplay(user.givenDate),
+          formatToDisplay(user.lastDate),
+          user.additionalInfo,
+          user.verifiedBy,
+          user.verifiedByNo,
+          user.createdAt ? formatToDisplay(user.createdAt) : "",
+          user.updatedAt ? formatToDisplay(user.updatedAt) : ""
+        ]);
+
+        sheet.addRow([]); // spacing
+
+        /* ===== COLLECTION HEADER ===== */
+        const colHeader = sheet.addRow(["Date", "Collection Amount"]);
+        colHeader.font = { bold: true };
+
+        /* ===== COLLECTION DATA ===== */
+        const userCollections = collectionMap[user.loanId] || [];
+        let userTotal = 0;
+
+        userCollections.forEach((c) => {
+          const amt = Number(c.amount || 0);
+          userTotal += amt;
+
+          sheet.addRow([
+            formatToDisplay(c.date),
+            amt
+          ]);
+        });
+
+        /* ===== USER TOTAL ===== */
+        const totalRow = sheet.addRow([
+          "TOTAL",
+          userTotal
+        ]);
+        totalRow.font = { bold: true };
+
+        /* ===== SPACE BETWEEN USERS ===== */
+        sheet.addRow([]);
+        sheet.addRow([]);
+      });
+
+      /* ================= DOWNLOAD ================= */
       res.setHeader(
-        "Content-Disposition",
-        `attachment; filename=full_report_${Date.now()}.pdf`
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       );
 
-      doc.pipe(res);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=full_data_${Date.now()}.xlsx`
+      );
 
-      doc.fontSize(16).text("Full Customer Loan Report", {
-        align: "center",
-      });
-      doc.fontSize(10).text(headerText, { align: "center" });
-
-      doc.moveDown(2);
-
-      const where = buildWhere();
-
-      const users = await LoanUser.findAll({
-        where,
-        order: [["sno", "ASC"]],
-      });
-
-      users.forEach((u) => {
-        doc.text(`Name: ${u.name}`);
-        doc.text(`Loan ID: ${u.loanId}`);
-        doc.text(`Area: ${u.area}`);
-        doc.text(`Amount: ${u.givenAmount}`);
-        doc.moveDown();
-      });
-
-      doc.end();
-      return;
+      await workbook.xlsx.write(res);
+      return res.end();
     }
-
-    res.status(400).json({ message: "Invalid dataType" });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    console.log("Error in downloadReport: ", err);
+    res.status(500).json({
+      success: false,
+      message: "Error in downloadReport",
+      data: err.message,
+    });
   }
 };
-
 
 const renewLoan = async (req, res, next) => {
   try {
@@ -713,28 +909,38 @@ const renewLoan = async (req, res, next) => {
   }
 };
 
+// 🔹 Toggle Mark (supports single object or array)
 const toggleMark = async (req, res, next) => {
   try {
-    const { id } = req.body;
-    const loanId = id || req.query.id;
+    const items = Array.isArray(req.body) ? req.body : [req.body];
+    const results = [];
+    const errors = [];
 
-    if (!loanId) {
-      return res.status(400).json({ message: "Loan ID is required" });
+    for (const item of items) {
+      const loanId = item.id || req.query.id;
+
+      if (!loanId) {
+        errors.push({ id: item.id, message: "Loan ID is required" });
+        continue;
+      }
+
+      const loan = await LoanUser.findOne({ where: { loanId } });
+
+      if (!loan) {
+        errors.push({ id: loanId, message: "Loan not found" });
+        continue;
+      }
+
+      // Toggle the marked status
+      await loan.update({ marked: !loan.marked });
+      results.push({ loanId, marked: loan.marked });
     }
-
-    const loan = await LoanUser.findOne({ where: { loanId } });
-
-    if (!loan) {
-      return res.status(404).json({ message: "Loan not found" });
-    }
-
-    // Toggle the marked status
-    await loan.update({ marked: !loan.marked });
 
     res.status(200).json({
       success: true,
-      message: "Loan marked status updated successfully",
-      marked: loan.marked
+      message: `${results.length} loan(s) marked status updated successfully`,
+      data: results.length === 1 ? results[0] : results,
+      ...(errors.length > 0 && { errors }),
     });
   } catch (error) {
     next(error);
